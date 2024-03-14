@@ -11,9 +11,9 @@ using DataFrames
 const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
 
 
-function initboptest!(endpoint, step; verbose=true)
+function initboptest!(boptest_url, step; verbose=true)
     init_vals = Dict("start_time" => 0,"warmup_period" => 0)
-    res = HTTP.put("$endpoint/initialize",
+    res = HTTP.put("$boptest_url/initialize",
                    ["Content-Type" => "application/json"],
                    JSON.json(init_vals)
     )
@@ -25,7 +25,7 @@ function initboptest!(endpoint, step; verbose=true)
     end
     
     # Set simulation step
-    res = HTTP.put("$endpoint/step",
+    res = HTTP.put("$boptest_url/step",
                    ["Content-Type" => "application/json"],
                    JSON.json(Dict("step" => step))
     )
@@ -39,7 +39,7 @@ function initboptest!(endpoint, step; verbose=true)
 end
 
 # TODO: Adjust to generic controllers, or remove
-function simulate(controller, Ns, colidx; endpoint=BOPTEST_DEF_URL)
+function simulate(controller, Ns, colidx; boptest_url=BOPTEST_DEF_URL)
     y = zeros(length(colidx), Ns)
 
     # simulation loop
@@ -53,7 +53,7 @@ function simulate(controller, Ns, colidx; endpoint=BOPTEST_DEF_URL)
             u = advance!(controller, y_, colidx)
         end
         # Advance in simulation
-        res = HTTP.post("$endpoint/advance",
+        res = HTTP.post("$boptest_url/advance",
                        ["Content-Type" => "application/json"],
                         JSON.json(u);
                         retry_non_idempotent=true
@@ -69,10 +69,10 @@ function simulate(controller, Ns, colidx; endpoint=BOPTEST_DEF_URL)
 end
 
 
-function printinfo(endpoint, d::Dict)
+function printinfo(boptest_url, d::Dict)
     println("TEST CASE INFORMATION ------------- \n")
     for (k, v) in d
-        res = HTTP.get("$endpoint/$v")
+        res = HTTP.get("$boptest_url/$v")
         payload = JSON.parse(String(res.body))["payload"]
         if res.status == 200
             pretty_pl = json(payload, 2)
@@ -83,15 +83,15 @@ function printinfo(endpoint, d::Dict)
 end
 
 
-function getkpi(endpoint)
-    res = HTTP.get("$endpoint/kpi")
+function getkpi(boptest_url)
+    res = HTTP.get("$boptest_url/kpi")
     return JSON.parse(String(res.body))["payload"]
 end
 
 
-function _getdata(query_url, body; timeout=30.0)
+function _getdata(endpoint, body; timeout=30.0)
     put_hdr = ["Content-Type" => "application/json", "connecttimeout" => timeout]
-    res = HTTP.put(query_url, put_hdr, JSON.json(body); retry_non_idempotent=true)
+    res = HTTP.put(endpoint, put_hdr, JSON.json(body); retry_non_idempotent=true)
     payload = JSON.parse(String(res.body))["payload"]
 
     d = Dict("time" => payload["time"])
@@ -103,18 +103,18 @@ function _getdata(query_url, body; timeout=30.0)
 end
 
 
-function getresults(endpoint, colnames, starttime, finaltime; timeout=30.0)
+function getresults(boptest_url, colnames, starttime, finaltime; timeout=30.0)
     body = Dict(
         "point_names" => colnames,
         "start_time" => starttime,
         "final_time" => finaltime,
     )
-    return _getdata("$endpoint/results", body; timeout=timeout)
+    return _getdata("$boptest_url/results", body; timeout=timeout)
 end
 
 
-function _getpoints(endpoint, path)
-	yvars_res = HTTP.get("$endpoint/$path")
+function _getpoints(boptest_url, path)
+	yvars_res = HTTP.get("$boptest_url/$path")
 	yvars_dict = JSON.parse(String(yvars_res.body))["payload"]
 	yvars = []
 	for (k, v) in yvars_dict
@@ -131,18 +131,18 @@ function _getpoints(endpoint, path)
 end
 
 
-getinputs(endpoint) = _getpoints(endpoint, "inputs")
-getmeasurements(endpoint) = _getpoints(endpoint, "measurements")
-getforecastpoints(endpoint) =  _getpoints(endpoint, "forecast_points")
+getinputs(boptest_url) = _getpoints(boptest_url, "inputs")
+getmeasurements(boptest_url) = _getpoints(boptest_url, "measurements")
+getforecastpoints(boptest_url) =  _getpoints(boptest_url, "forecast_points")
 
 
-function getforecast(endpoint, colnames, horizon, interval; timeout=30.0)
+function getforecast(boptest_url, colnames, horizon, interval; timeout=30.0)
     body = Dict(
         "point_names" => colnames,
         "horizon" => horizon,
         "interval" => interval
     )
-    return _getdata("$endpoint/forecast", body; timeout=timeout)
+    return _getdata("$boptest_url/forecast", body; timeout=timeout)
 end
 
 
@@ -156,9 +156,9 @@ function _payload2array(payload::Dict; cols=collect(keys(payload)))::Matrix{Floa
 end
 
 
-function advanceboptest!(endpoint, u, ycols)
+function advanceboptest!(boptest_url, u, ycols)
 	res = HTTP.post(
-		"$endpoint/advance",
+		"$boptest_url/advance",
 		["Content-Type" => "application/json"],
 		JSON.json(u);
 		retry_non_idempotent=true
@@ -170,16 +170,16 @@ end
 
 
 function openloopsim!(
-    endpoint, N::Int, dt;
+    boptest_url, N::Int, dt;
     u::Union{Dict, Nothing}=nothing,
     include_forecast::Bool=false,
     verbose::Bool=false,
 )
-	BOPTestAPI.initboptest!(endpoint, dt; verbose=verbose)
+	initboptest!(boptest_url, dt; verbose=verbose)
 
     if include_forecast
-        fcpts = DataFrame(getforecastpoints(endpoint))
-        forecast = getforecast(endpoint, fcpts.Name, N*dt, dt)
+        fcpts = DataFrame(getforecastpoints(boptest_url))
+        forecast = getforecast(boptest_url, fcpts.Name, N*dt, dt)
     else
         forecast = Dict()
     end
@@ -188,7 +188,7 @@ function openloopsim!(
     # Default for u: override all controls -> "*_activate" = 1
     # and send u = 0 -> "*_u" = 0.0
 	if isnothing(u)
-		inputs = DataFrame(BOPTestAPI.getinputs(endpoint))
+		inputs = DataFrame(getinputs(boptest_url))
 		override_sigs = subset(inputs, :Name => s -> endswith.(s, "_activate"))
         u_sigs = subset(inputs, :Name => s -> endswith.(s, "_u"))
 	
@@ -198,13 +198,13 @@ function openloopsim!(
         )
 	end
 
-	measurements = DataFrame(BOPTestAPI.getmeasurements(endpoint))
+	measurements = DataFrame(getmeasurements(boptest_url))
 
     Y = zeros(size(measurements, 1), N+1)
-    y0d = BOPTestAPI.getresults(endpoint, measurements.Name, 0.0, 0.0)
+    y0d = getresults(boptest_url, measurements.Name, 0.0, 0.0)
     Y[:, 1] = _payload2array(y0d; cols=measurements.Name)
 	for j = 2:N+1
-		Y[:, j] = BOPTestAPI.advanceboptest!(endpoint, u, measurements.Name)
+		Y[:, j] = advanceboptest!(boptest_url, u, measurements.Name)
 	end
 
 	# This solution always returns 30-sec interval data:
