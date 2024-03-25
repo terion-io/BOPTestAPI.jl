@@ -194,7 +194,7 @@ Step the plant using control input u.
 Returns an m-by-one `Matrix` where each row corresponds to the
 name from `ycols`.
 """
-function advanceboptest!(boptest_url, u, ycols)
+function advanceboptest!(boptest_url, u; ymapper = y -> y)
 	res = HTTP.post(
 		"$boptest_url/advance",
 		["Content-Type" => "application/json"],
@@ -203,7 +203,7 @@ function advanceboptest!(boptest_url, u, ycols)
 	)
 	
 	payload_dict = JSON.parse(String(res.body))["payload"]
-    return _payload2array(payload_dict; cols=ycols)
+    return ymapper(payload_dict)
 end
 
 """
@@ -272,7 +272,10 @@ function openloopsim!(
     y0d = getresults(boptest_url, measurements.Name, 0.0, 0.0)
     Y[:, 1] = _payload2array(y0d; cols=measurements.Name)
 	for j = 2:N+1
-		Y[:, j] = advanceboptest!(boptest_url, u[j-1], measurements.Name)
+		Y[:, j] = advanceboptest!(
+            boptest_url, u[j-1];
+            ymapper = y -> _payload2array(y; cols=measurements.Name)
+        )
 	end
 
 	# This solution would always return 30-sec interval data:
