@@ -10,6 +10,37 @@ using DataFrames
 
 const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
 
+
+struct SignalMapper
+    names::AbstractVector{AbstractString}
+    forward_scaler::Function
+    backward_scaler::Function
+end
+
+function to_boptest(
+    mapper::SignalMapper,
+    x::AbstractMatrix,
+    overwrite::AbstractVector{Bool}
+)
+    x = mapper.forward_scaler(x)
+    d = Dict{AbstractString, Any}()
+    for (i, s) in enumerate(mapper.names)
+        d[s * "_u"] = x[i, :]
+        d[s * "_activate"] = overwrite[i]			
+    end
+    return d
+end
+
+function to_matrix(mapper::SignalMapper, d::Dict)
+    m = length(d[mapper.names[1]])
+    x = zeros(length(mapper.names), m)
+    for (i, s) in enumerate(mapper.names)
+        x[i, :] = d[s]
+    end
+    return mapper.backward_scaler(x)
+end
+
+
 ## Private functions
 function _payload2array(payload::Dict; cols=collect(keys(payload)))::Matrix{Float64}
 	n = length(payload[cols[1]])
