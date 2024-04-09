@@ -1,5 +1,6 @@
 module BOPTestAPI
 
+export SignalMapper, to_boptest, to_matrix
 export initboptest!, advanceboptest!, openloopsim!
 export getforecast, getresults, getkpi, getmeasurements
 export BOPTEST_DEF_URL
@@ -11,47 +12,7 @@ using DataFrames
 const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
 
 
-struct SignalMapper
-    names::AbstractVector{AbstractString}
-    forward_scaler::Function
-    backward_scaler::Function
-end
-
-function to_boptest(
-    mapper::SignalMapper,
-    x::AbstractMatrix,
-    overwrite::AbstractVector{Bool}
-)
-    x = mapper.forward_scaler(x)
-    d = Dict{AbstractString, Any}()
-    for (i, s) in enumerate(mapper.names)
-        d[s * "_u"] = x[i, :]
-        d[s * "_activate"] = overwrite[i]			
-    end
-    return d
-end
-
-function to_matrix(mapper::SignalMapper, d::Dict)
-    m = length(d[mapper.names[1]])
-    x = zeros(length(mapper.names), m)
-    for (i, s) in enumerate(mapper.names)
-        x[i, :] = d[s]
-    end
-    return mapper.backward_scaler(x)
-end
-
-
 ## Private functions
-function _payload2array(payload::Dict; cols=collect(keys(payload)))::Matrix{Float64}
-	n = length(payload[cols[1]])
-    y = zeros(length(cols), n)
-	for (i, k) in enumerate(cols)
-		y[i, :] .= payload[k]
-	end
-    return y
-end
-
-
 function _getdata(endpoint, body; timeout=30.0)
     put_hdr = ["Content-Type" => "application/json", "connecttimeout" => timeout]
     res = HTTP.put(endpoint, put_hdr, JSON.json(body); retry_non_idempotent=true)
@@ -85,6 +46,38 @@ end
 
 
 ## Public API
+
+struct SignalMapper
+    names::AbstractVector{AbstractString}
+    forward_scaler::Function
+    backward_scaler::Function
+end
+
+function to_boptest(
+    mapper::SignalMapper,
+    x::AbstractVector,
+    overwrite::AbstractVector{Bool}
+)
+    x = mapper.forward_scaler(x)
+    d = Dict{AbstractString, Any}()
+    for (i, s) in enumerate(mapper.names)
+        d[s * "_u"] = x[i]
+        d[s * "_activate"] = Int(overwrite[i])			
+    end
+    return d
+end
+
+function to_matrix(mapper::SignalMapper, d::Dict)
+    m = length(d[mapper.names[1]])
+    x = zeros(length(mapper.names), m)
+    for (i, s) in enumerate(mapper.names)
+        # If scalar value returned (e.g. from /advance), broadcast
+        # since the array is 2D (but with ncols=1)
+        x[i, :] .= d[s]
+    end
+    return mapper.backward_scaler(x)
+end
+
 
 """
     initboptest!(boptest_url, dt[; init_vals, verbose])
@@ -220,12 +213,10 @@ Step the plant using control input u.
 # Arguments
 - `boptest_url`: URL of the BOPTEST server to step.
 - `u::Dict`: Control inputs for the active test case.
-- `ycols::AbstractVector`: Names of columns to be returned.
 
-Returns an m-by-one `Matrix` where each row corresponds to the
-name from `ycols`.
+Returns the payload as `Dict{String, Vector}``.
 """
-function advanceboptest!(boptest_url, u; ymapper = y -> y)
+function advanceboptest!(boptest_url, u)
 	res = HTTP.post(
 		"$boptest_url/advance",
 		["Content-Type" => "application/json"],
@@ -234,7 +225,7 @@ function advanceboptest!(boptest_url, u; ymapper = y -> y)
 	)
 	
 	payload_dict = JSON.parse(String(res.body))["payload"]
-    return ymapper(payload_dict)
+    return payload_dict
 end
 
 """
@@ -295,18 +286,18 @@ function openloopsim!(
         u = fill(u, N)
     end
 
+
     length(u) >= N || throw(DimensionMismatch("Need at least $N control input entries."))
 
 	measurements = DataFrame(getmeasurements(boptest_url))
+    ymapper = SignalMapper(measurements.Name, y-> y, y -> y)
 
     Y = zeros(size(measurements, 1), N+1)
     y0d = getresults(boptest_url, measurements.Name, 0.0, 0.0)
-    Y[:, 1] = _payload2array(y0d; cols=measurements.Name)
+    Y[:, 1] = to_matrix(ymapper, y0d)
 	for j = 2:N+1
-		Y[:, j] = advanceboptest!(
-            boptest_url, u[j-1];
-            ymapper = y -> _payload2array(y; cols=measurements.Name)
-        )
+        d_ = advanceboptest!(boptest_url, u[j-1])
+		Y[:, j] = to_matrix(ymapper, d_)
 	end
 
 	# This solution would always return 30-sec interval data:
