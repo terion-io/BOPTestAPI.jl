@@ -1,6 +1,6 @@
 module BOPTestAPI
 
-export SignalMapper, to_boptest, to_matrix
+export SignalTransform, to_boptest, to_matrix
 export initboptest!, advanceboptest!, openloopsim!
 export getforecast, getresults, getkpi, getmeasurements
 export BOPTEST_DEF_URL
@@ -46,36 +46,68 @@ end
 
 
 ## Public API
+"""
+    SignalTransform(names, transform, inv_transform)
 
-struct SignalMapper
+Bundle information for transforming data to and from BOPTEST.
+
+# Arguments
+- names : Vector of signal names. **OBS:** Leave out suffixes 
+'_u' and '_activate' for control signals.
+- transform : Function to transform from BOPTEST to controller.
+- inv_transform : Function to transform from controller to BOPTEST.
+"""
+struct SignalTransform
     names::AbstractVector{AbstractString}
-    forward_scaler::Function
-    backward_scaler::Function
+    transform::Function
+    inv_transform::Function
 end
 
+
+"""
+    to_boptest(transformer, u, overwrite)
+
+Return `Dict` with control signals for BOPTEST.
+
+The function calls the inverse transform on `u`, and then creates
+a `Dict` with 2 entries per signal name in the `transformer`:
+1. `"<signal_name>_u" => u`
+2. `"<signal_name>_activate" => overwrite`
+"""
 function to_boptest(
-    mapper::SignalMapper,
-    x::AbstractVector,
+    transformer::SignalTransform,
+    u::AbstractVector,
     overwrite::AbstractVector{Bool}
 )
-    x = mapper.forward_scaler(x)
+    u = transformer.inv_transform(u)
     d = Dict{AbstractString, Any}()
-    for (i, s) in enumerate(mapper.names)
-        d[s * "_u"] = x[i]
+    for (i, s) in enumerate(transformer.names)
+        d[s * "_u"] = u[i]
         d[s * "_activate"] = Int(overwrite[i])			
     end
     return d
 end
 
-function to_matrix(mapper::SignalMapper, d::Dict)
-    m = length(d[mapper.names[1]])
-    x = zeros(length(mapper.names), m)
-    for (i, s) in enumerate(mapper.names)
+
+"""
+    to_matrix(transformer, d)
+
+Return `Matrix` with scaled outputs from BOPTEST.
+
+The function unpacks `d::Dict` into a matrix where each row
+corresponds to a signal entry that is both in the dict and in
+`transformer.names`, and multiple values (i.e. time) are in the
+column dimension.
+"""
+function to_matrix(transformer::SignalTransform, d::Dict)
+    m = length(d[transformer.names[1]])
+    x = zeros(length(transformer.names), m)
+    for (i, s) in enumerate(transformer.names)
         # If scalar value returned (e.g. from /advance), broadcast
         # since the array is 2D (but with ncols=1)
         x[i, :] .= d[s]
     end
-    return mapper.backward_scaler(x)
+    return transformer.transform(x)
 end
 
 
@@ -290,14 +322,14 @@ function openloopsim!(
     length(u) >= N || throw(DimensionMismatch("Need at least $N control input entries."))
 
 	measurements = DataFrame(getmeasurements(boptest_url))
-    ymapper = SignalMapper(measurements.Name, y-> y, y -> y)
+    y_transform = SignalTransform(measurements.Name, y-> y, y -> y)
 
     Y = zeros(size(measurements, 1), N+1)
     y0d = getresults(boptest_url, measurements.Name, 0.0, 0.0)
-    Y[:, 1] = to_matrix(ymapper, y0d)
+    Y[:, 1] = to_matrix(y_transform, y0d)
 	for j = 2:N+1
         d_ = advanceboptest!(boptest_url, u[j-1])
-		Y[:, j] = to_matrix(ymapper, d_)
+		Y[:, j] = to_matrix(y_transform, d_)
 	end
 
 	# This solution would always return 30-sec interval data:
