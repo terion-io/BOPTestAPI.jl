@@ -287,7 +287,7 @@ the baseline control.
 """
 function openloopsim!(
     boptest_url, N::Int, dt;
-    u::Union{AbstractVector{Dict}, Dict, Nothing} = nothing,
+    u = nothing,
     include_forecast::Bool = false,
     verbose::Bool = false,
 )
