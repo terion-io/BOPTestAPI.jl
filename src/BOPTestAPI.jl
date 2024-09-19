@@ -54,13 +54,11 @@ Bundle information for transforming data to and from BOPTEST.
 # Arguments
 - names : Vector of signal names. **OBS:** Leave out suffixes 
 '_u' and '_activate' for control signals.
-- transform : Function to transform from BOPTEST to controller.
-- inv_transform : Function to transform from controller to BOPTEST.
+- transform : Function to transform between BOPTEST and controller.
 """
 struct SignalTransform
     names::AbstractVector{AbstractString}
     transform::Function
-    inv_transform::Function
 end
 
 
@@ -69,7 +67,7 @@ end
 
 Return `Dict` with control signals for BOPTEST.
 
-The function calls the inverse transform on `u`, and then creates
+The function calls the transform on `u`, and then creates
 a `Dict` with 2 entries per signal name in the `transformer`:
 1. `"<signal_name>_u" => u`
 2. `"<signal_name>_activate" => overwrite`
@@ -79,7 +77,7 @@ function to_boptest(
     u::AbstractVector,
     overwrite::AbstractVector{Bool}
 )
-    u = transformer.inv_transform(u)
+    u = transformer.transform(u)
     d = Dict{AbstractString, Any}()
     for (i, s) in enumerate(transformer.names)
         d[s * "_u"] = u[i]
@@ -99,7 +97,7 @@ corresponds to a signal entry that is both in the dict and in
 `transformer.names`, and multiple values (i.e. time) are in the
 column dimension.
 """
-function to_matrix(transformer::SignalTransform, d::Dict)
+function to_matrix(transformer::SignalTransform, d::AbstractDict)
     m = length(d[transformer.names[1]])
     x = zeros(length(transformer.names), m)
     for (i, s) in enumerate(transformer.names)
