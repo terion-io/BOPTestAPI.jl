@@ -320,7 +320,7 @@ function openloopsim!(
     length(u) >= N || throw(DimensionMismatch("Need at least $N control input entries."))
 
 	measurements = DataFrame(getmeasurements(boptest_url))
-    y_transform = SignalTransform(measurements.Name, y-> y, y -> y)
+    y_transform = SignalTransform(measurements.Name, y -> y)
 
     Y = zeros(size(measurements, 1), N+1)
     y0d = getresults(boptest_url, measurements.Name, 0.0, 0.0)
