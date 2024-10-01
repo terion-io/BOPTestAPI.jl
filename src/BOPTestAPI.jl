@@ -12,8 +12,36 @@ using DataFrames
 const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
 
 
+abstract type AbstractBOPTestPlant end
+
+# BOPTEST-Service (https://github.com/NREL/boptest-service)
+# runs several test cases in parallel
+Base.@kwdef struct BOPTestServicePlant <: AbstractBOPTestPlant
+    boptest_url::AbstractString
+    testid::AbstractString
+    testcase::AbstractString
+    scenario::AbstractDict
+end
+
+# BOPTEST (https://github.com/ibpsa/project1-boptest/) 
+# runs a single test case and thus doesn't have a testid
+Base.@kwdef struct BOPTestPlant <: AbstractBOPTestPlant
+    boptest_url::AbstractString
+    testcase::AbstractString
+    scenario::AbstractString
+end
+
 ## Private functions
-function _getdata(endpoint, body; timeout=30.0)
+@inline function _endpoint(plant::BOPTestServicePlant, service::AbstractString)
+    return "$(plant.boptest_url)/$service/$(plant.testid)"
+end
+
+@inline function _endpoint(plant::BOPTestPlant, service::AbstractString)
+    return "$(plant.boptest_url)/$service"
+end
+
+
+function _getdata(endpoint::AbstractString, body; timeout = 30.0)
     put_hdr = ["Content-Type" => "application/json", "connecttimeout" => timeout]
     res = HTTP.put(endpoint, put_hdr, JSON.json(body); retry_non_idempotent=true)
     payload = JSON.parse(String(res.body))["payload"]
@@ -27,18 +55,20 @@ function _getdata(endpoint, body; timeout=30.0)
 end
 
 
-function _getpoints(boptest_url, path)
-	yvars_res = HTTP.get("$boptest_url/$path")
+function _getpoints(plant::AbstractBOPTestPlant, path)
+    endpoint = _endpoint(plant, path)
+	yvars_res = HTTP.get(endpoint)
 	yvars_dict = JSON.parse(String(yvars_res.body))["payload"]
 	yvars = []
-	for (k, v) in yvars_dict
-		d_ = Dict(
-			"Name" => k,
-			"Description" => v["Description"],
-			"Unit" => v["Unit"],
-		)
-
-		push!(yvars, d_)
+	for (k, v_dict) in yvars_dict
+        # Replace nothing with missing; not beautiful but explicit
+        for (vk, vv) in v_dict
+            if isnothing(vv)
+                v_dict[vk] = missing
+            end
+        end
+		_d = Dict("Name" => k, v_dict...)
+        push!(yvars, _d)
 	end
 
     return yvars
@@ -123,65 +153,62 @@ Initialize the BOPTEST server with step size dt.
 Return `true` on success, and `false` on error.
 
 """
-function initboptest!(
-    boptest_url, dt;
+function initboptestservice!(
+    boptest_url::AbstractString,
+    testcase::AbstractString,
+    dt::Real;
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
+    scenario::Union{Nothing, AbstractDict} = nothing,
     verbose::Bool = false,
 )
-    res = HTTP.put(
-        "$boptest_url/initialize",
+    
+    res = HTTP.post(
+        "$boptest_url/testcases/$testcase/select",
         ["Content-Type" => "application/json"],
         JSON.json(init_vals)
     )
     if res.status != 200
-        return false
+        error("Could not select BOPTest testcase")
     end
-    verbose && println("Successfully initialized the simulation")
-    
+
+    payload = JSON.parse(String(res.body))
+
+    testid = payload["testid"]
+
     # Set simulation step
+    init_dict = Dict(init_vals..., "step" => dt)
     res = HTTP.put(
-        "$boptest_url/step",
+        "$boptest_url/initialize/$testid",
         ["Content-Type" => "application/json"],
-        JSON.json(Dict("step" => dt))
+        JSON.json(init_dict)
     )
     if res.status != 200
-        return false
+        error("Error initializing testcase")
     end
-    verbose && println("Set simulation step to $step")
+    verbose && println("Initialized testcase=$testcase with step=$step")
 
-    return true
-end
-
-# TODO: Adjust to generic controllers, or remove
-function simulate(controller, Ns, colidx; boptest_url=BOPTEST_DEF_URL)
-    y = zeros(length(colidx), Ns)
-
-    # simulation loop
-    for j = 1:Ns
-        if j < 2
-        # Initialize u
-            u = initialize!(controller)
-        else
-        # Compute next control signal
-            y_ = @view y[:, j-1]
-            u = advance!(controller, y_, colidx)
-        end
-        # Advance in simulation
-        res = HTTP.post("$boptest_url/advance",
-                       ["Content-Type" => "application/json"],
-                        JSON.json(u);
-                        retry_non_idempotent=true
+    if !isnothing(scenario)
+        res = HTTP.put(
+            "$boptest_url/scenario/$testid",
+            ["Content-Type" => "application/json"],
+            JSON.json(scenario)
         )
-        y_j = JSON.parse(String(res.body))["payload"]
-
-        # Attach new values to time series
-        for (k, i) in colidx
-            y[i, j] = y_j[k]
-        end
+        verbose && println("Initialized scenario with ", repr(scenario))
+    else
+        scenario = Dict()
     end
-    return y
+
+    return BOPTestServicePlant(; boptest_url, testid, testcase, scenario)
 end
 
+
+function stop!(plant::BOPTestServicePlant)
+    try
+        HTTP.put(_endpoint(plant, "stop"))
+    catch e
+        println()
+    end
+end
 
 function printinfo(boptest_url, d::Dict)
     println("TEST CASE INFORMATION ------------- \n")
@@ -200,8 +227,8 @@ end
 """
 Get KPI from BOPTEST server as `Dict`.
 """
-function getkpi(boptest_url)
-    res = HTTP.get("$boptest_url/kpi")
+function getkpi(plant::AbstractBOPTestPlant)
+    res = HTTP.get(_endpoint(plant, "kpi"))
     return JSON.parse(String(res.body))["payload"]
 end
 
@@ -209,30 +236,30 @@ end
 """
 Query results from BOPTEST server.
 """
-function getresults(boptest_url, colnames, starttime, finaltime; timeout=30.0)
+function getresults(plant::AbstractBOPTestPlant, colnames, starttime, finaltime; timeout=30.0)
     body = Dict(
         "point_names" => colnames,
         "start_time" => starttime,
         "final_time" => finaltime,
     )
-    return _getdata("$boptest_url/results", body; timeout=timeout)
+    return _getdata(_endpoint(plant, "results"), body; timeout=timeout)
 end
 
 
-getinputs(boptest_url) = _getpoints(boptest_url, "inputs")
-getmeasurements(boptest_url) = _getpoints(boptest_url, "measurements")
-getforecastpoints(boptest_url) =  _getpoints(boptest_url, "forecast_points")
+getinputs(plant) = _getpoints(plant, "inputs")
+getmeasurements(plant) = _getpoints(plant, "measurements")
+getforecastpoints(plant) =  _getpoints(plant, "forecast_points")
 
 """
 Query forecast from BOPTEST server.
 """
-function getforecast(boptest_url, colnames, horizon, interval; timeout=30.0)
+function getforecast(plant::AbstractBOPTestPlant, colnames, horizon, interval; timeout=30.0)
     body = Dict(
         "point_names" => colnames,
         "horizon" => horizon,
         "interval" => interval
     )
-    return _getdata("$boptest_url/forecast", body; timeout=timeout)
+    return _getdata(_endpoint(plant, "forecast"), body; timeout=timeout)
 end
 
 """
@@ -246,9 +273,9 @@ Step the plant using control input u.
 
 Returns the payload as `Dict{String, Vector}``.
 """
-function advanceboptest!(boptest_url, u)
+function advanceboptest!(plant::AbstractBOPTestPlant, u)
 	res = HTTP.post(
-		"$boptest_url/advance",
+		_endpoint(plant, "advance"),
 		["Content-Type" => "application/json"],
 		JSON.json(u);
 		retry_non_idempotent=true
@@ -257,6 +284,25 @@ function advanceboptest!(boptest_url, u)
 	payload_dict = JSON.parse(String(res.body))["payload"]
     return payload_dict
 end
+
+
+function controlinputs(
+    plant::AbstractBOPTestPlant;
+    dfmap::Function = df -> df[!, :Minimum]
+)
+    # Default for u: override all controls -> "*_activate" = 1
+    # and send u = dfmap(Name)
+    inputs = DataFrame(getinputs(plant))
+    override_sigs = subset(inputs, :Name => s -> endswith.(s, "_activate"))
+    u_sigs = subset(inputs, :Name => s -> endswith.(s, "_u"))
+
+    u = Dict(
+        Pair.(override_sigs.Name, 1)...,
+        Pair.(u_sigs.Name, dfmap(u_sigs))...,
+    )
+    return u
+end
+
 
 """
     openloopsim!(boptest_url, N, dt[; u, include_forecast, verbose])
@@ -284,33 +330,19 @@ pass an empty `Dict()` in order to use default values for all signals, i.e.
 the baseline control.
 """
 function openloopsim!(
-    boptest_url, N::Int, dt;
-    u = nothing,
+    plant::AbstractBOPTestPlant, N::Int;
+    u = Dict(),
     include_forecast::Bool = false,
-    verbose::Bool = false,
 )
-	initboptest!(boptest_url, dt; verbose=verbose)
-
+    res = HTTP.get(_endpoint(plant, "step"))
+    dt = JSON.parse(String(res.body))["payload"]
+    
     if include_forecast
-        fcpts = DataFrame(getforecastpoints(boptest_url))
+        fcpts = DataFrame(getforecastpoints(plant))
         forecast = getforecast(boptest_url, fcpts.Name, N*dt, dt)
     else
         forecast = Dict()
     end
-
-
-    # Default for u: override all controls -> "*_activate" = 1
-    # and send u = 0 -> "*_u" = 0.0
-	if isnothing(u)
-		inputs = DataFrame(getinputs(boptest_url))
-		override_sigs = subset(inputs, :Name => s -> endswith.(s, "_activate"))
-        u_sigs = subset(inputs, :Name => s -> endswith.(s, "_u"))
-	
-		u = Dict(
-            Pair.(override_sigs.Name, 1)...,
-            Pair.(u_sigs.Name, 0.0)...,
-        )
-	end
 
     if !(u isa AbstractVector)
         u = fill(u, N)
@@ -319,14 +351,14 @@ function openloopsim!(
 
     length(u) >= N || throw(DimensionMismatch("Need at least $N control input entries."))
 
-	measurements = DataFrame(getmeasurements(boptest_url))
+	measurements = DataFrame(getmeasurements(plant))
     y_transform = SignalTransform(measurements.Name, y -> y)
 
     Y = zeros(size(measurements, 1), N+1)
-    y0d = getresults(boptest_url, measurements.Name, 0.0, 0.0)
+    y0d = getresults(plant, measurements.Name, 0.0, 0.0)
     Y[:, 1] = to_matrix(y_transform, y0d)
 	for j = 2:N+1
-        d_ = advanceboptest!(boptest_url, u[j-1])
+        d_ = advanceboptest!(plant, u[j-1])
 		Y[:, j] = to_matrix(y_transform, d_)
 	end
 
