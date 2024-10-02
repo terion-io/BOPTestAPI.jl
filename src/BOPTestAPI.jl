@@ -4,7 +4,7 @@ export BOPTestServicePlant, BOPTestPlant
 export SignalTransform, controlinputs, plantoutputs
 export initboptest!, initboptestservice!, advance!, openloopsim!, stop!
 export forecastpoints, inputpoints, measurementpoints
-export getforecast, getresults, getkpi
+export getforecasts, getmeasurements, getkpi
 export BOPTEST_DEF_URL, BOPTEST_SERVICE_DEF_URL
 
 using HTTP
@@ -354,15 +354,15 @@ end
 
 
 """
-    getresults(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
+    getmeasurements(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
 
-Query results from BOPTEST server.
+Query measurements from BOPTEST server.
 
 # Arguments
-- `plant` : The plant to query results from.
+- `plant` : The plant to query measurements from.
 - `points::AbstractVector{AbstractString}` : The measurement point names to query.
-- `starttime::Real` : Start time for results time series, in seconds.
-- `finaltime::Real` : Final time for results time series, in seconds.
+- `starttime::Real` : Start time for measurements time series, in seconds.
+- `finaltime::Real` : Final time for measurements time series, in seconds.
 
 To obtain available measurement points, use `measurementpoints(plant)`, which returns 
 a vector of `Dict`. Each element in the vector has an entry with key "Name". The recommended
@@ -373,10 +373,10 @@ mpts = DataFrame(measurementpoints(plant))
 # Alternative:
 # mpts = plant |> measurementpoints |> DataFrame
 
-res = getresults(plant, mpts.Name, 0.0, 12 * 3600.0)
+res = getmeasurements(plant, mpts.Name, 0.0, 12 * 3600.0)
 ```
 """
-function getresults(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
+function getmeasurements(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
     body = Dict(
         "point_names" => points,
         "start_time" => starttime,
@@ -386,7 +386,7 @@ function getresults(plant::AbstractBOPTestPlant, points, starttime, finaltime; t
 end
 
 """
-    getforecast(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
+    getforecasts(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
 
 Query forecast from BOPTEST server.
 
@@ -397,9 +397,9 @@ Query forecast from BOPTEST server.
 - `interval::Real` : Time step size for the forecast data.
 
 You can query available forecast points with `forecastpoints(plant)`. 
-See the documentation for `getresults` for more details on extracting available points.
+See the documentation for `getmeasurements` for more details on extracting available points.
 """
-function getforecast(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
+function getforecasts(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
     body = Dict(
         "point_names" => points,
         "horizon" => horizon,
@@ -478,7 +478,7 @@ function openloopsim!(
     
     if include_forecast
         fcpts = DataFrame(forecastpoints(plant))
-        forecast = getforecast(plant, fcpts.Name, N*dt, dt)
+        forecast = getforecasts(plant, fcpts.Name, N*dt, dt)
     else
         forecast = Dict()
     end
@@ -497,7 +497,7 @@ function openloopsim!(
     print_every > 0 && println("Starting open-loop simulation")
 
     Y = zeros(size(measurements, 1), N+1)
-    y0d = getresults(plant, measurements.Name, 0.0, 0.0)
+    y0d = getmeasurements(plant, measurements.Name, 0.0, 0.0)
     Y[:, 1] = plantoutputs(y_transform, y0d)
 
     for j = 2:N+1
