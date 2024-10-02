@@ -95,7 +95,7 @@ end
 
 
 """
-    controlinputs(transformer, u, overwrite)
+    controlinputs(transformer::SignalTransform, u, overwrite)
 
 Return `Dict` with control signals for BOPTEST.
 
@@ -119,7 +119,23 @@ function controlinputs(
 end
 
 
-function controlinputs(dfmap::Function, plant::AbstractBOPTestPlant)
+"""
+    controlinputs([f::Function, ]plant::AbstractBOPTestPlant)
+
+Return `Dict` with control signals for BOPTEST.
+
+This method calls `inputpoints(plant)` to gather available inputs,
+and then creates a `Dict` with the available inputs as keys and
+default values defined by function `f`.
+
+`f` is a function that is applied to a `DataFrame` constructed from
+the input points that have a suffix "_u", i.e. control inputs. The `DataFrame`
+normally has columns `:Name`, `:Minimum`, `:Maximum`, `:Unit`, `:Description`.
+
+The default for `f` is `df -> df[!, :Minimum]`, i.e. use the minimum allowed 
+input.
+"""
+function controlinputs(f::Function, plant::AbstractBOPTestPlant)
     # Default for u: override all controls -> "*_activate" = 1
     # and send u = dfmap(Name)
     inputs = DataFrame(inputpoints(plant))
@@ -128,7 +144,7 @@ function controlinputs(dfmap::Function, plant::AbstractBOPTestPlant)
 
     u = Dict(
         Pair.(override_sigs.Name, 1)...,
-        Pair.(u_sigs.Name, dfmap(u_sigs))...,
+        Pair.(u_sigs.Name, f(u_sigs))...,
     )
     return u
 end
@@ -307,6 +323,8 @@ forecastpoints(plant::AbstractBOPTestPlant) =  _getpoints(plant, "forecast_point
 
 
 """
+    getkpi(plant::AbstractBOPTestPlant)
+
 Get KPI from BOPTEST server as `Dict`.
 """
 function getkpi(plant::AbstractBOPTestPlant)
@@ -316,7 +334,27 @@ end
 
 
 """
+    getresults(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
+
 Query results from BOPTEST server.
+
+# Arguments
+- `plant` : The plant to query results from.
+- `points::AbstractVector{AbstractString}` : The measurement point names to query.
+- `starttime::Real` : Start time for results time series, in seconds.
+- `finaltime::Real` : Final time for results time series, in seconds.
+
+To obtain available measurement points, use `measurementpoints(plant)`, which returns 
+a vector of `Dict`. Each element in the vector has an entry with key "Name". The recommended
+way is to make use of a `DataFrame`, i.e.
+
+```julia
+mpts = DataFrame(measurementpoints(plant))
+# Alternative:
+# mpts = plant |> measurementpoints |> DataFrame
+
+res = getresults(plant, mpts.Name, 0.0, 12 * 3600.0)
+```
 """
 function getresults(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
     body = Dict(
@@ -328,7 +366,18 @@ function getresults(plant::AbstractBOPTestPlant, points, starttime, finaltime; t
 end
 
 """
+    getforecast(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
+
 Query forecast from BOPTEST server.
+
+# Arguments
+- `plant` : The plant to query forecast from.
+- `points::AbstractVector{AbstractString}` : The forecast point names to query.
+- `horizon::Real` : Forecast time horizon from current time step, in seconds.
+- `interval::Real` : Time step size for the forecast data.
+
+You can query available forecast points with `forecastpoints(plant)`. 
+See the documentation for `getresults` for more details on extracting available points.
 """
 function getforecast(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
     body = Dict(
@@ -340,17 +389,17 @@ function getforecast(plant::AbstractBOPTestPlant, points, horizon, interval; tim
 end
 
 """
-    advance!(plant, u)
+    advance!(plant::AbstractBOPTestPlant, u::AbstractDict)
 
 Step the plant using control input u.
 
 # Arguments
 - `plant::AbstractBOPTestPlant`: Plant to advance.
-- `u::Dict`: Control inputs for the active test case.
+- `u::AbstractDict`: Control inputs for the active test case.
 
 Returns the payload as `Dict{String, Vector}``.
 """
-function advance!(plant::AbstractBOPTestPlant, u)
+function advance!(plant::AbstractBOPTestPlant, u::AbstractDict)
 	res = HTTP.post(
 		_endpoint(plant, "advance"),
 		["Content-Type" => "application/json"],
@@ -364,29 +413,35 @@ end
 
 
 """
-    openloopsim!(boptest_url, N, dt[; u, include_forecast, verbose])
+    openloopsim!(
+    plant::AbstractBOPTestPlant, N::Int;
+    u = Dict(),
+    include_forecast::Bool = false,
+    print_every::Int = 0,
+)
 
 Run the plant in open loop simulation for N steps of time dt.
 
 # Arguments
-- `boptest_url`: URL of the BOPTEST server to step.
-- `N::Int`: Number of steps
-- `dt::Real`: Time step size
-- `u`: Control inputs for the active test case. See below for options.
+- `plant::AbstractBOPTestPlant`: Plant to simulate.
+- `N::Int`: Number of time steps.
+- `dt::Real`: Time step size.
+- `u`::AbstractDict : Control inputs for the active test case. See below for options.
 - `include_forecast::Bool`: Include forecasts in the returned `DataFrame`.
 - `verbose::Bool`: Print something to stdout.
 
 # Control inputs
 Control inputs are passed through parameter `u`. The options are:
 - `AbstractVector{Dict}`, where item `i` is control input at time step `i`.
-- `Dict`, which means a constant control input at all time steps.
-- `nothing`, in which case all control inputs are overwritten with `0.0`.
+- A scalar `Dict`, which means a constant control input at all time steps.
 
 The dictionaries should contain mappings `"<signal_name>" => <value>`.
-Use `getinputs(boptest_url)` to query available inputs. Input signals not found
-in the dictionary will use the (testcase-specific) default instead. You can
-pass an empty `Dict()` in order to use default values for all signals, i.e.
-the baseline control.
+Use `inputpoints(plant)` to query available inputs. Input signals not found
+in the dictionary will use the (testcase-specific) default instead.
+
+The default for `u` is an empty `Dict`, which will use baseline control for
+all signals.
+
 """
 function openloopsim!(
     plant::AbstractBOPTestPlant, N::Int;
