@@ -1,16 +1,18 @@
 module BOPTestAPI
 
-export SignalTransform, to_boptest, to_matrix
-export initboptest!, advanceboptest!, openloopsim!
-export getforecast, getresults, getkpi, getmeasurements
-export BOPTEST_DEF_URL
+export BOPTestServicePlant, BOPTestPlant
+export SignalTransform, controlinputs, plantoutputs
+export initboptest!, initboptestservice!, advance!, openloopsim!, stop!
+export forecastpoints, inputpoints, measurementpoints
+export getforecast, getresults, getkpi
+export BOPTEST_DEF_URL, BOPTEST_SERVICE_DEF_URL
 
 using HTTP
 using JSON
 using DataFrames
 
 const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
-
+const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
 
 abstract type AbstractBOPTestPlant end
 
@@ -28,7 +30,7 @@ end
 Base.@kwdef struct BOPTestPlant <: AbstractBOPTestPlant
     boptest_url::AbstractString
     testcase::AbstractString
-    scenario::AbstractString
+    scenario::AbstractDict
 end
 
 ## Private functions
@@ -43,7 +45,7 @@ end
 
 function _getdata(endpoint::AbstractString, body; timeout = 30.0)
     put_hdr = ["Content-Type" => "application/json", "connecttimeout" => timeout]
-    res = HTTP.put(endpoint, put_hdr, JSON.json(body); retry_non_idempotent=true)
+    res = HTTP.put(endpoint, put_hdr, JSON.json(body))
     payload = JSON.parse(String(res.body))["payload"]
 
     d = Dict("time" => payload["time"])
@@ -77,7 +79,7 @@ end
 
 ## Public API
 """
-    SignalTransform(names, transform, inv_transform)
+    SignalTransform(names, transform)
 
 Bundle information for transforming data to and from BOPTEST.
 
@@ -93,19 +95,19 @@ end
 
 
 """
-    to_boptest(transformer, u, overwrite)
+    controlinputs(transformer, u, overwrite)
 
 Return `Dict` with control signals for BOPTEST.
 
 The function calls the transform on `u`, and then creates
-a `Dict` with 2 entries per signal name in the `transformer`:
+a `Dict` with 2 entries per signal name in `transformer`:
 1. `"<signal_name>_u" => u`
 2. `"<signal_name>_activate" => overwrite`
 """
-function to_boptest(
+function controlinputs(
     transformer::SignalTransform,
     u::AbstractVector,
-    overwrite::AbstractVector{Bool}
+    overwrite::AbstractVector{<:Integer}
 )
     u = transformer.transform(u)
     d = Dict{AbstractString, Any}()
@@ -117,8 +119,25 @@ function to_boptest(
 end
 
 
+function controlinputs(dfmap::Function, plant::AbstractBOPTestPlant)
+    # Default for u: override all controls -> "*_activate" = 1
+    # and send u = dfmap(Name)
+    inputs = DataFrame(inputpoints(plant))
+    override_sigs = subset(inputs, :Name => s -> endswith.(s, "_activate"))
+    u_sigs = subset(inputs, :Name => s -> endswith.(s, "_u"))
+
+    u = Dict(
+        Pair.(override_sigs.Name, 1)...,
+        Pair.(u_sigs.Name, dfmap(u_sigs))...,
+    )
+    return u
+end
+
+controlinputs(p::AbstractBOPTestPlant) = controlinputs(df -> df[!, :Minimum], p)
+
+
 """
-    to_matrix(transformer, d)
+    plantoutput(transformer, d)
 
 Return `Matrix` with scaled outputs from BOPTEST.
 
@@ -127,7 +146,7 @@ corresponds to a signal entry that is both in the dict and in
 `transformer.names`, and multiple values (i.e. time) are in the
 column dimension.
 """
-function to_matrix(transformer::SignalTransform, d::AbstractDict)
+function plantoutputs(transformer::SignalTransform, d::AbstractDict)
     m = length(d[transformer.names[1]])
     x = zeros(length(transformer.names), m)
     for (i, s) in enumerate(transformer.names)
@@ -140,17 +159,19 @@ end
 
 
 """
-    initboptest!(boptest_url, dt[; init_vals, verbose])
+    initboptestservice!(boptest_url, testcase, dt[; init_vals, scenario, verbose])
 
-Initialize the BOPTEST server with step size dt.
+Initialize a testcase in BOPTEST service with step size dt.
 
 # Arguments
 - `boptest_url`: URL of the BOPTEST server to initialize.
+- `testcase` : Name of the test case.
 - `dt`: Time step in seconds.
 - `init_vals::Dict`: Parameters for the initialization.
+- `scenario::Dict` : Parameters for scenario selection.
 - `verbose::Bool`: Print something to stdout.
 
-Return `true` on success, and `false` on error.
+Return a `BOPTestServicePlant` instance, or throw an `ErrorException` on error.
 
 """
 function initboptestservice!(
@@ -161,31 +182,27 @@ function initboptestservice!(
     scenario::Union{Nothing, AbstractDict} = nothing,
     verbose::Bool = false,
 )
-    
+    # Select testcase
     res = HTTP.post(
         "$boptest_url/testcases/$testcase/select",
         ["Content-Type" => "application/json"],
         JSON.json(init_vals)
     )
-    if res.status != 200
-        error("Could not select BOPTest testcase")
-    end
+    res.status != 200 && error("Could not select BOPTest testcase")
 
     payload = JSON.parse(String(res.body))
-
     testid = payload["testid"]
 
     # Set simulation step
-    init_dict = Dict(init_vals..., "step" => dt)
+    init_vals = Dict(init_vals..., "step" => dt)
     res = HTTP.put(
         "$boptest_url/initialize/$testid",
         ["Content-Type" => "application/json"],
-        JSON.json(init_dict)
+        JSON.json(init_vals)
     )
-    if res.status != 200
-        error("Error initializing testcase")
-    end
-    verbose && println("Initialized testcase=$testcase with step=$step")
+    res.status != 200 && error("Error initializing testcase")
+
+    verbose && println("Initialized testcase=$testcase with step=$dt s")
 
     if !isnothing(scenario)
         res = HTTP.put(
@@ -204,16 +221,76 @@ end
 
 function stop!(plant::BOPTestServicePlant)
     try
-        HTTP.put(_endpoint(plant, "stop"))
+        res = HTTP.put(_endpoint(plant, "stop"))
+        res.status == 200 && println("Successfully stopped testid ", plant.testid)
     catch e
-        println()
+        if e isa HTTP.Exceptions.StatusError
+            payload = JSON.parse(String(e.response.body))
+            println(payload["errors"][1]["msg"])
+        else
+            rethrow(e)
+        end
     end
 end
 
-function printinfo(boptest_url, d::Dict)
+# Hopefully avoids user confusion
+stop!(p::BOPTestPlant) = println("Only plants in BOPTEST-Service can be stopped")
+
+
+"""
+    initboptest!(boptest_url, dt[; init_vals, scenario, verbose])
+
+Initialize the BOPTEST server with step size dt.
+
+# Arguments
+- `boptest_url`: URL of the BOPTEST server to initialize.
+- `dt`: Time step in seconds.
+- `init_vals::Dict`: Parameters for the initialization.
+- `scenario::Dict` : Parameters for scenario selection.
+- `verbose::Bool`: Print something to stdout.
+
+Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
+
+"""
+function initboptest!(
+    boptest_url::AbstractString,
+    dt::Real;
+    init_vals = Dict("start_time" => 0, "warmup_period" => 0),
+    scenario::Union{Nothing, AbstractDict} = nothing,
+    verbose::Bool = false,
+)
+    # Set simulation step
+    init_vals = Dict(init_vals..., "step" => dt)
+    res = HTTP.put(
+        "$boptest_url/initialize",
+        ["Content-Type" => "application/json"],
+        JSON.json(init_vals)
+    )
+    res.status != 200 && error("Error initializing testcase")
+
+    res = HTTP.get("$boptest_url/name")
+    testcase = JSON.parse(String(res.body))["payload"]["name"]
+    verbose && println("Initialized testcase=$testcase with step=$dt s")
+    
+    if !isnothing(scenario)
+        res = HTTP.put(
+            "$boptest_url/scenario",
+            ["Content-Type" => "application/json"],
+            JSON.json(scenario)
+        )
+        verbose && println("Initialized scenario with ", repr(scenario))
+    else
+        scenario = Dict()
+    end
+
+    return BOPTestPlant(; boptest_url, testcase, scenario)
+end
+
+
+function printinfo(plant::AbstractBOPTestPlant, d::AbstractDict)
     println("TEST CASE INFORMATION ------------- \n")
     for (k, v) in d
-        res = HTTP.get("$boptest_url/$v")
+        res = HTTP.get("$(plant.boptest_url)/$v")
         payload = JSON.parse(String(res.body))["payload"]
         if res.status == 200
             pretty_pl = json(payload, 2)
@@ -222,6 +299,11 @@ function printinfo(boptest_url, d::Dict)
         end
     end
 end
+
+
+inputpoints(plant::AbstractBOPTestPlant) = _getpoints(plant, "inputs")
+measurementpoints(plant::AbstractBOPTestPlant) = _getpoints(plant, "measurements")
+forecastpoints(plant::AbstractBOPTestPlant) =  _getpoints(plant, "forecast_points")
 
 
 """
@@ -236,26 +318,21 @@ end
 """
 Query results from BOPTEST server.
 """
-function getresults(plant::AbstractBOPTestPlant, colnames, starttime, finaltime; timeout=30.0)
+function getresults(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
     body = Dict(
-        "point_names" => colnames,
+        "point_names" => points,
         "start_time" => starttime,
         "final_time" => finaltime,
     )
     return _getdata(_endpoint(plant, "results"), body; timeout=timeout)
 end
 
-
-getinputs(plant) = _getpoints(plant, "inputs")
-getmeasurements(plant) = _getpoints(plant, "measurements")
-getforecastpoints(plant) =  _getpoints(plant, "forecast_points")
-
 """
 Query forecast from BOPTEST server.
 """
-function getforecast(plant::AbstractBOPTestPlant, colnames, horizon, interval; timeout=30.0)
+function getforecast(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
     body = Dict(
-        "point_names" => colnames,
+        "point_names" => points,
         "horizon" => horizon,
         "interval" => interval
     )
@@ -263,17 +340,17 @@ function getforecast(plant::AbstractBOPTestPlant, colnames, horizon, interval; t
 end
 
 """
-    advanceboptest!(boptest_url, u, ycols)
+    advance!(plant, u)
 
 Step the plant using control input u.
 
 # Arguments
-- `boptest_url`: URL of the BOPTEST server to step.
+- `plant::AbstractBOPTestPlant`: Plant to advance.
 - `u::Dict`: Control inputs for the active test case.
 
 Returns the payload as `Dict{String, Vector}``.
 """
-function advanceboptest!(plant::AbstractBOPTestPlant, u)
+function advance!(plant::AbstractBOPTestPlant, u)
 	res = HTTP.post(
 		_endpoint(plant, "advance"),
 		["Content-Type" => "application/json"],
@@ -283,24 +360,6 @@ function advanceboptest!(plant::AbstractBOPTestPlant, u)
 	
 	payload_dict = JSON.parse(String(res.body))["payload"]
     return payload_dict
-end
-
-
-function controlinputs(
-    plant::AbstractBOPTestPlant;
-    dfmap::Function = df -> df[!, :Minimum]
-)
-    # Default for u: override all controls -> "*_activate" = 1
-    # and send u = dfmap(Name)
-    inputs = DataFrame(getinputs(plant))
-    override_sigs = subset(inputs, :Name => s -> endswith.(s, "_activate"))
-    u_sigs = subset(inputs, :Name => s -> endswith.(s, "_u"))
-
-    u = Dict(
-        Pair.(override_sigs.Name, 1)...,
-        Pair.(u_sigs.Name, dfmap(u_sigs))...,
-    )
-    return u
 end
 
 
@@ -333,33 +392,39 @@ function openloopsim!(
     plant::AbstractBOPTestPlant, N::Int;
     u = Dict(),
     include_forecast::Bool = false,
+    print_every::Int = 0,
 )
     res = HTTP.get(_endpoint(plant, "step"))
     dt = JSON.parse(String(res.body))["payload"]
     
     if include_forecast
-        fcpts = DataFrame(getforecastpoints(plant))
+        fcpts = DataFrame(forecastpoints(plant))
         forecast = getforecast(boptest_url, fcpts.Name, N*dt, dt)
     else
         forecast = Dict()
     end
 
     if !(u isa AbstractVector)
+        # Constant control inputs
         u = fill(u, N)
     end
 
 
     length(u) >= N || throw(DimensionMismatch("Need at least $N control input entries."))
 
-	measurements = DataFrame(getmeasurements(plant))
+	measurements = DataFrame(measurementpoints(plant))
     y_transform = SignalTransform(measurements.Name, y -> y)
+
+    print_every > 0 && println("Starting open-loop simulation")
 
     Y = zeros(size(measurements, 1), N+1)
     y0d = getresults(plant, measurements.Name, 0.0, 0.0)
-    Y[:, 1] = to_matrix(y_transform, y0d)
-	for j = 2:N+1
-        d_ = advanceboptest!(plant, u[j-1])
-		Y[:, j] = to_matrix(y_transform, d_)
+    Y[:, 1] = plantoutputs(y_transform, y0d)
+
+    for j = 2:N+1
+        (print_every > 0) && (j % print_every == 0) && println("Current time step = ",  j)
+        _d = advance!(plant, u[j-1])
+		Y[:, j] = plantoutputs(y_transform, _d)
 	end
 
 	# This solution would always return 30-sec interval data:
