@@ -87,6 +87,8 @@ Bundle information for transforming data to and from BOPTEST.
 - names : Vector of signal names. **OBS:** Leave out suffixes 
 '_u' and '_activate' for control signals.
 - transform : Function to transform between BOPTEST and controller.
+
+**Note**: Experimental.
 """
 struct SignalTransform
     names::AbstractVector{AbstractString}
@@ -103,6 +105,8 @@ The function calls the transform on `u`, and then creates
 a `Dict` with 2 entries per signal name in `transformer`:
 1. `"<signal_name>_u" => u`
 2. `"<signal_name>_activate" => overwrite`
+
+**Note**: Experimental.
 """
 function controlinputs(
     transformer::SignalTransform,
@@ -428,6 +432,9 @@ function advance!(plant::AbstractBOPTestPlant, u::AbstractDict)
 end
 
 
+# TODO: Check if this function adds any value over just
+# res = [advance!(plant, u) for t=1:N]
+# df = DataFrame(res)
 """
     openloopsim!(
     plant::AbstractBOPTestPlant, N::Int;
@@ -458,6 +465,7 @@ in the dictionary will use the (testcase-specific) default instead.
 The default for `u` is an empty `Dict`, which will use baseline control for
 all signals.
 
+**Note**: Experimental
 """
 function openloopsim!(
     plant::AbstractBOPTestPlant, N::Int;
