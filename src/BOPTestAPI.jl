@@ -376,17 +376,17 @@ mpts = DataFrame(measurementpoints(plant))
 res = getmeasurements(plant, mpts.Name, 0.0, 12 * 3600.0)
 ```
 """
-function getmeasurements(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
+function getmeasurements(plant::AbstractBOPTestPlant, points, starttime, finaltime; kwargs...)
     body = Dict(
         "point_names" => points,
         "start_time" => starttime,
         "final_time" => finaltime,
     )
-    return _getdata(_endpoint(plant, "results"), body; timeout=timeout)
+    return _getdata(_endpoint(plant, "results"), body; kwargs...)
 end
 
 """
-    getforecasts(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
+    getforecasts(plant::AbstractBOPTestPlant, points, horizon, interval)
 
 Query forecast from BOPTEST server.
 
@@ -394,18 +394,18 @@ Query forecast from BOPTEST server.
 - `plant` : The plant to query forecast from.
 - `points::AbstractVector{AbstractString}` : The forecast point names to query.
 - `horizon::Real` : Forecast time horizon from current time step, in seconds.
-- `interval::Real` : Time step size for the forecast data.
+- `interval::Real` : Time step size for the forecast data, in seconds.
 
 You can query available forecast points with `forecastpoints(plant)`. 
 See the documentation for `getmeasurements` for more details on extracting available points.
 """
-function getforecasts(plant::AbstractBOPTestPlant, points, horizon, interval; timeout=30.0)
+function getforecasts(plant::AbstractBOPTestPlant, points, horizon, interval; kwargs...)
     body = Dict(
         "point_names" => points,
         "horizon" => horizon,
         "interval" => interval
     )
-    return _getdata(_endpoint(plant, "forecast"), body; timeout=timeout)
+    return _getdata(_endpoint(plant, "forecast"), body; kwargs...)
 end
 
 """
@@ -446,12 +446,11 @@ end
 Run the plant in open loop simulation for N steps of time dt.
 
 # Arguments
-- `plant::AbstractBOPTestPlant`: Plant to simulate.
-- `N::Int`: Number of time steps.
-- `dt::Real`: Time step size.
+- `plant::AbstractBOPTestPlant` : Plant to simulate.
+- `N::Int` : Number of time steps.
 - `u`::AbstractDict : Control inputs for the active test case. See below for options.
-- `include_forecast::Bool`: Include forecasts in the returned `DataFrame`.
-- `verbose::Bool`: Print something to stdout.
+- `include_forecast::Bool` : Include forecasts in the returned `DataFrame`.
+- `print_every::Int` : How often to print the current time step, or 0 to disable
 
 # Control inputs
 Control inputs are passed through parameter `u`. The options are:
