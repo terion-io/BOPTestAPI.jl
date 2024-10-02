@@ -209,8 +209,7 @@ function initboptestservice!(
     payload = JSON.parse(String(res.body))
     testid = payload["testid"]
 
-    # Set simulation step
-    init_vals = Dict(init_vals..., "step" => dt)
+    # Initialize warmup
     res = HTTP.put(
         "$boptest_url/initialize/$testid",
         ["Content-Type" => "application/json"],
@@ -218,8 +217,17 @@ function initboptestservice!(
     )
     res.status != 200 && error("Error initializing testcase")
 
-    verbose && println("Initialized testcase=$testcase with step=$dt s")
+    # Set simulation step
+    res = HTTP.put(
+        "$boptest_url/step/$testid",
+        ["Content-Type" => "application/json"],
+        JSON.json(Dict("step" => dt))
+    )
+    res.status != 200 && error("Error setting time step")
 
+    verbose && println("Initialized testcase=$testcase with step=$(dt)s")
+
+    # Set scenario (electricity prices, ...)
     if !isnothing(scenario)
         res = HTTP.put(
             "$boptest_url/scenario/$testid",
@@ -275,8 +283,7 @@ function initboptest!(
     scenario::Union{Nothing, AbstractDict} = nothing,
     verbose::Bool = false,
 )
-    # Set simulation step
-    init_vals = Dict(init_vals..., "step" => dt)
+    # Initialize
     res = HTTP.put(
         "$boptest_url/initialize",
         ["Content-Type" => "application/json"],
@@ -284,10 +291,19 @@ function initboptest!(
     )
     res.status != 200 && error("Error initializing testcase")
 
+    # Set simulation step
+    res = HTTP.put(
+        "$boptest_url/step",
+        ["Content-Type" => "application/json"],
+        JSON.json(Dict("step" => dt))
+    )
+    res.status != 200 && error("Error setting time step")
+
     res = HTTP.get("$boptest_url/name")
     testcase = JSON.parse(String(res.body))["payload"]["name"]
-    verbose && println("Initialized testcase=$testcase with step=$dt s")
+    verbose && println("Initialized testcase=$testcase with step=$(dt)s")
     
+    # Set scenario (electricity prices, ...)
     if !isnothing(scenario)
         res = HTTP.put(
             "$boptest_url/scenario",
@@ -454,7 +470,7 @@ function openloopsim!(
     
     if include_forecast
         fcpts = DataFrame(forecastpoints(plant))
-        forecast = getforecast(boptest_url, fcpts.Name, N*dt, dt)
+        forecast = getforecast(plant, fcpts.Name, N*dt, dt)
     else
         forecast = Dict()
     end
