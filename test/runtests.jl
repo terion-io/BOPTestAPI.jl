@@ -7,7 +7,10 @@ using Test
     dt = 300.0
 
     # To use BOPTEST-service
-    plant = initboptestservice!(BOPTEST_SERVICE_DEF_URL, testcase, dt)
+    plant = initboptestservice!(
+        BOPTEST_SERVICE_DEF_URL, testcase, dt;
+        verbose = true
+    )
     
     # To use BOPTEST
     # plant = initboptest!(BOPTEST_DEF_URL, dt)
@@ -22,13 +25,13 @@ using Test
         mpts = plant |> measurementpoints |> DataFrame
         @test size(mpts, 1) > 0
 
-        res = getresults(plant, mpts.Name, 0.0, 0.0) # Dict
+        res = getmeasurements(plant, mpts.Name, 0.0, 0.0) # Dict
         @test "time" in keys(res)
         @test res["reaPPum_y"] isa AbstractVector
 
         # Get forecast
         N = 12
-        fc = getforecast(plant, fcpts.Name, N * 3600, 3600) |> DataFrame
+        fc = getforecasts(plant, fcpts.Name, N * 3600, 3600) |> DataFrame
         @test size(fc, 1) == N + 1
 
         # Control inputs

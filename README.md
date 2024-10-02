@@ -12,11 +12,16 @@ BOPTEST itself comes in two flavours, the "single-plant" [BOPTEST](https://githu
 ## Usage
 The general idea is that the BOPTEST services are abstracted away as a `plant`, which only stores metadata about the plant such as the endpoints to use.
 
-For normal BOPTEST (type `BOPTestPlant`), the test case is specified when starting the service, and there is no test ID since only a single plant is running.
-
-For BOPTEST-Service (type `BOPTestServicePlant`), the test case needs to be specified explicitly, and a `testid` UUID is returned by the server that is stored as plant metadata.
+The package then defines common functions to operate on the plant, which are translated to REST API calls and the required data formattings.
 
 ### Initialization
+There are two types of plants, depending on whether they run in BOPTEST or BOPTEST-Service:
+* For normal BOPTEST (type `BOPTestPlant`), the test case is specified when starting the service, and there is no test ID since only a single plant is running.
+* For BOPTEST-Service (type `BOPTestServicePlant`), the test case needs to be specified explicitly, and a `testid` UUID is returned by the server that is stored as plant metadata.
+
+> [!TIP]
+> Both types are subtypes of `AbstractBOPTestPlant` (Note: not exported), this can be useful for defining additional functions.
+
 It is recommended to create plants using the initialization functions:
 
 ```julia
@@ -35,7 +40,8 @@ remote_plant = initboptestservice!(BOPTEST_SERVICE_DEF_URL, testcase, dt)
 ### Interaction with the plant
 The package then defines common functions to operate on the plant, namely
 * `inputpoints`, `measurementpoints`, `forecastpoints` to query input, measurement, and forecast signal metadata respectively
-* `getforecast`, `getresults` to get the actual time series data for forecast or past results
+* `getforecasts`, `getmeasurements` to get the actual time series data for forecast or past measurements
+* `getkpi` to get the KPI for the test case (calculated by BOPTEST)
 * `advance!`, to step the plant one time step with user-specified control input
 * `stop!`, to stop a test case (BOPTEST-Service only)
 
@@ -51,7 +57,7 @@ fcpts = plant |> forecastpoints |> DataFrame
 
 # Query forecast data for 24 hours, with 1/dt sampling frequency
 # The column "Name" contains all available forecast signal names
-fc = getforecast(plant, fcpts.Name, 24*3600, dt) |> DataFrame
+fc = getforecasts(plant, fcpts.Name, 24*3600, dt) |> DataFrame
 
 # The DataFrames are by default untyped, so for good performance we should convert
 # if possible
@@ -71,6 +77,9 @@ u = controlinputs(plant)
 # Simulate 100 steps open-loop
 res_ol = [advance!(plant, u) for _ = 1:100]
 df_ol = DataFrame(res_ol)
+
+# KPI
+kpi = getkpi(plant)
 ```
 
 #### Stop
