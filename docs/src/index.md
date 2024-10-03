@@ -25,15 +25,16 @@ plant = initboptestservice!(BOPTEST_SERVICE_DEF_URL, testcase, dt)
 mpts = plant |> measurementpoints |> DataFrame
 mdtable(mpts[1:3, :], latex=false) # hide
 ```
+*(Output truncated)*
 
 ```@example 1
-# Get forecast data as well (for plotting later)
 N = 100
 
+# Get forecast data as well (for plotting later)
 fcpts = plant |> forecastpoints |> DataFrame
 fc = getforecasts(plant, fcpts.Name, N * dt, dt) |> DataFrame
 
-# Run 100 time steps of baseline control
+# Run N time steps of baseline control
 res = []
 for t = 1:N
     u = Dict() # here you would put your own controller
@@ -43,12 +44,12 @@ end
 stop!(plant)
 
 dfres = DataFrame(res)
-mdtable(dfres[1:5, 3:6], latex=false) # hide
+mdtable(mapcols(c -> round.(c, digits=2), dfres[1:5, 3:6]), latex=false) # hide
 ```
-(Note that the actual `DataFrame` has more columns, which are truncated here.)
+*(Output truncated in both columns and rows)*
 
-And that's it! You successfully simulated a building HVAC system in the cloud using BOPTEST-Service.
-The following code will just make some plots of the results.
+**And that's it!** You successfully simulated a building HVAC system in the cloud using 
+BOPTEST-Service. The following code will just make some plots of the results.
 ```@example 1
 # typecast forecast to Float64
 mapcols!(c -> Float64.(c), fc)
