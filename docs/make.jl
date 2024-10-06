@@ -4,4 +4,5 @@ makedocs(sitename="BOPTestAPI.jl")
 
 deploydocs(
     repo = "github.com/terion-io/BOPTestAPI.jl.git",
+    push_preview = true,
 )
