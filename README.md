@@ -2,6 +2,9 @@
 
 [![Build Status](https://github.com/terion-io/BOPTestAPI.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/terion-io/BOPTestAPI.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
+[![](https://img.shields.io/badge/docs-stable-blue.svg)](https://terion-io.github.io/BOPTestAPI.jl/stable)
+[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://terion-io.github.io/BOPTestAPI.jl/dev)
+
 Some convenience functions for developing building controllers against the [BOPTEST framework](https://github.com/ibpsa/project1-boptest) in Julia.
 
 ## Info
