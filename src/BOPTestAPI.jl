@@ -11,13 +11,35 @@ using HTTP
 using JSON
 using DataFrames
 
+"""
+    const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
+
+Default URL when starting BOPTEST locally,
+"""
 const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
+
+"""
+    const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
+
+URL of the NREL BOPTEST-Service API.
+"""
 const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
 
 abstract type AbstractBOPTestPlant end
 
 # BOPTEST-Service (https://github.com/NREL/boptest-service)
 # runs several test cases in parallel
+"""
+    struct BOPTestServicePlant <: AbstractBOPTestPlant
+
+Metadata for a BOPTEST-Service plant.
+
+# Fieldnames
+- boptest_url
+- testid
+- testcase
+- scenario
+"""
 Base.@kwdef struct BOPTestServicePlant <: AbstractBOPTestPlant
     boptest_url::AbstractString
     testid::AbstractString
@@ -27,6 +49,16 @@ end
 
 # BOPTEST (https://github.com/ibpsa/project1-boptest/) 
 # runs a single test case and thus doesn't have a testid
+"""
+    struct BOPTestPlant <: AbstractBOPTestPlant
+
+Metadata for a BOPTEST plant.
+
+# Fieldnames
+- boptest_url
+- testcase
+- scenario
+"""
 Base.@kwdef struct BOPTestPlant <: AbstractBOPTestPlant
     boptest_url::AbstractString
     testcase::AbstractString
@@ -184,7 +216,7 @@ end
 Initialize a testcase in BOPTEST service with step size dt.
 
 # Arguments
-- `boptest_url`: URL of the BOPTEST server to initialize.
+- `boptest_url`: URL of the BOPTEST-Service API to initialize.
 - `testcase` : Name of the test case.
 - `dt`: Time step in seconds.
 - `init_vals::Dict`: Parameters for the initialization.
@@ -247,6 +279,13 @@ function initboptestservice!(
 end
 
 
+"""
+    stop!(plant::AbstractBOPTestPlant)
+
+Stop a `BOPTestServicePlant` from running.
+
+This method does nothing for plants run in normal BOPTEST.
+"""
 function stop!(plant::BOPTestServicePlant)
     try
         res = HTTP.put(_endpoint(plant, "stop"))
@@ -336,9 +375,25 @@ function printinfo(plant::AbstractBOPTestPlant, d::AbstractDict)
     end
 end
 
+"""
+    inputpoints(plant::AbstractBOPTestPlant)
 
+Get the available input signals for the plant.
+"""
 inputpoints(plant::AbstractBOPTestPlant) = _getpoints(plant, "inputs")
+
+"""
+    measurementpoints(plant::AbstractBOPTestPlant)
+
+Get the available measurement signals for the plant.
+"""
 measurementpoints(plant::AbstractBOPTestPlant) = _getpoints(plant, "measurements")
+
+"""
+    forecastpoints(plant::AbstractBOPTestPlant)
+
+Get the available forecast signals for the plant.
+"""
 forecastpoints(plant::AbstractBOPTestPlant) =  _getpoints(plant, "forecast_points")
 
 
@@ -354,7 +409,7 @@ end
 
 
 """
-    getmeasurements(plant::AbstractBOPTestPlant, points, starttime, finaltime; timeout=30.0)
+    getmeasurements(plant::AbstractBOPTestPlant, points, starttime, finaltime)
 
 Query measurements from BOPTEST server.
 
@@ -417,7 +472,7 @@ Step the plant using control input u.
 - `plant::AbstractBOPTestPlant`: Plant to advance.
 - `u::AbstractDict`: Control inputs for the active test case.
 
-Returns the payload as `Dict{String, Vector}``.
+Returns the payload as `Dict{String, Vector}`.
 """
 function advance!(plant::AbstractBOPTestPlant, u::AbstractDict)
 	res = HTTP.post(

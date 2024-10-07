@@ -1,18 +1,80 @@
-# BOPTestAPI
+# BOPTestAPI.jl
 
-[![Build Status](https://github.com/terion-io/BOPTestAPI.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/terion-io/BOPTestAPI.jl/actions/workflows/CI.yml?query=branch%3Amain)
+## Quickstart
+### Installation
+`BOPTestAPI` is available from the Julia general registry. Thus, you can add it like
+```julia
+import Pkg; Pkg.add("BOPTestAPI")
+```
 
-[![](https://img.shields.io/badge/docs-stable-blue.svg)](https://terion-io.github.io/BOPTestAPI.jl/stable)
-[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://terion-io.github.io/BOPTestAPI.jl/dev)
+### Self-contained example
+See further below for some explanations.
 
-Some convenience functions for developing building controllers against the [BOPTEST framework](https://github.com/ibpsa/project1-boptest) in Julia.
+```@example 1
+using BOPTestAPI
+using DataFrames
+using Plots
+using Latexify # hide
 
-## Info
-This package can be used to develop building controllers against the BOPTEST REST API.
+dt = 900.0 # time step in seconds
+testcase = "bestest_hydronic"
 
-BOPTEST itself comes in two flavours, the "single-plant" [BOPTEST](https://github.com/ibpsa/project1-boptest) and the larger scale [BOPTEST-Service](https://github.com/NREL/boptest-service), which allows running many plants in parallel.
+plant = initboptestservice!(BOPTEST_SERVICE_DEF_URL, testcase, dt)
+
+# Get available measurement points
+mpts = plant |> measurementpoints |> DataFrame
+mdtable(mpts[1:3, :], latex=false) # hide
+```
+*(Output truncated)*
+
+```@example 1
+N = 100
+
+# Get forecast data as well (for plotting later)
+fcpts = plant |> forecastpoints |> DataFrame
+fc = getforecasts(plant, fcpts.Name, N * dt, dt) |> DataFrame
+
+# Run N time steps of baseline control
+res = []
+for t = 1:N
+    u = Dict() # here you would put your own controller
+    y = advance!(plant, u)
+    push!(res, y)
+end
+stop!(plant)
+
+dfres = DataFrame(res)
+mdtable(mapcols(c -> round.(c, digits=2), dfres[1:5, 3:6]), latex=false) # hide
+```
+*(Output truncated in both columns and rows)*
+
+**And that's it!** You successfully simulated a building HVAC system in the cloud using 
+BOPTEST-Service. The following code will just make some plots of the results.
+```@example 1
+# typecast forecast to Float64
+mapcols!(c -> Float64.(c), fc)
+# Create single df with all data
+df = leftjoin(dfres, fc, on = :time => :time)
+
+pl1 = plot(
+    df.time ./ 3600,
+    Matrix(df[!, ["reaTRoo_y", "LowerSetp[1]"]]);
+    xlabel="t [h]",
+    ylabel="T [K]",
+    labels=["actual" "target"],
+)
+pl2 = plot(
+    df.time ./ 3600, df.reaQHea_y ./ 1000;
+    xlabel="t [h]",
+    ylabel="Qdot [kW]",
+    labels="Heating"
+)
+plot(pl1, pl2; layout=(2, 1))
+```
 
 ## Usage
+(See also the [README on Github](https://github.com/terion-io/BOPTestAPI.jl))
+
 The general idea is that the BOPTEST services are abstracted away as a `plant`, which only stores metadata about the plant such as the endpoints to use.
 
 The package then defines common functions to operate on the plant, which are translated to REST API calls and the required data formattings.
@@ -22,16 +84,9 @@ There are two types of plants, depending on whether they run in BOPTEST or BOPTE
 * For normal BOPTEST (type `BOPTestPlant`), the test case is specified when starting the service, and there is no test ID since only a single plant is running.
 * For BOPTEST-Service (type `BOPTestServicePlant`), the test case needs to be specified explicitly, and a `testid` UUID is returned by the server that is stored as plant metadata.
 
-> [!TIP]
-> Both types are subtypes of `AbstractBOPTestPlant` (Note: not exported), this can be useful for defining additional functions.
-
 It is recommended to create plants using the initialization functions:
 
 ```julia
-# BOPTEST_DEF_URL points to "127.0.0.1:5000", which is the BOPTEST default
-# BOPTEST_SERVICE_DEF_URL points to "http://api.boptest.net", which is where
-# NREL hosts the BOPTEST API
-
 dt = 900.0 # time step in seconds
 local_plant = initboptest!(BOPTEST_DEF_URL, dt)
 
@@ -93,3 +148,23 @@ stop!(remote_plant)
 ```
 
 This function does nothing when called on a "normal" `BOPTestPlant`
+
+
+## API
+```@docs
+BOPTEST_DEF_URL
+BOPTEST_SERVICE_DEF_URL
+BOPTestPlant
+BOPTestServicePlant
+initboptest!
+initboptestservice!
+forecastpoints
+inputpoints
+measurementpoints
+getforecasts
+getmeasurements
+getkpi
+controlinputs
+advance!
+stop!
+```
