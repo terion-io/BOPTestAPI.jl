@@ -27,53 +27,48 @@ const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
 
 abstract type AbstractBOPTestPlant end
 
+abstract type AbstractBOPTestEndpoint end
+
 # BOPTEST-Service (https://github.com/NREL/boptest-service)
 # runs several test cases in parallel
-"""
-    struct BOPTestServicePlant <: AbstractBOPTestPlant
-
-Metadata for a BOPTEST-Service plant.
-
-# Fieldnames
-- boptest_url
-- testid
-- testcase
-- scenario
-"""
-Base.@kwdef struct BOPTestServicePlant <: AbstractBOPTestPlant
+Base.@kwdef struct BOPTestEndpoint <: AbstractBOPTestEndpoint
     boptest_url::AbstractString
-    testid::AbstractString
-    testcase::AbstractString
-    scenario::AbstractDict
+end
+
+function (plant::BOPTestServiceEndpoint)(service::AbstractString)
+    return "$(plant.boptest_url)/$service/$(plant.testid)"
 end
 
 # BOPTEST (https://github.com/ibpsa/project1-boptest/) 
 # runs a single test case and thus doesn't have a testid
+Base.@kwdef struct BOPTestServiceEndpoint <: AbstractBOPTestEndpoint
+    boptest_url::AbstractString
+    testid::AbstractString
+end
+
+function (plant::BOPTestEndpoint)(service::AbstractString)
+    return "$(plant.boptest_url)/$service"
+end
+
+
 """
     struct BOPTestPlant <: AbstractBOPTestPlant
 
 Metadata for a BOPTEST plant.
 
-# Fieldnames
-- boptest_url
-- testcase
-- scenario
 """
-Base.@kwdef struct BOPTestPlant <: AbstractBOPTestPlant
-    boptest_url::AbstractString
+Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
+    endpoint::EP
     testcase::AbstractString
     scenario::AbstractDict
+
+    forecast_points::AbstractDataFrame
+    inputs_points::AbstractDataFrame
+    measurement_points::AbstractDataFrame
 end
+
 
 ## Private functions
-@inline function _endpoint(plant::BOPTestServicePlant, service::AbstractString)
-    return "$(plant.boptest_url)/$service/$(plant.testid)"
-end
-
-@inline function _endpoint(plant::BOPTestPlant, service::AbstractString)
-    return "$(plant.boptest_url)/$service"
-end
-
 
 function _getdata(endpoint::AbstractString, body; timeout = 30.0)
     put_hdr = ["Content-Type" => "application/json", "connecttimeout" => timeout]
@@ -89,8 +84,7 @@ function _getdata(endpoint::AbstractString, body; timeout = 30.0)
 end
 
 
-function _getpoints(plant::AbstractBOPTestPlant, path)
-    endpoint = _endpoint(plant, path)
+function _getpoints(endpoint::AbstractString)
 	yvars_res = HTTP.get(endpoint)
 	yvars_dict = JSON.parse(String(yvars_res.body))["payload"]
 	yvars = []
@@ -275,20 +269,32 @@ function initboptestservice!(
         scenario = Dict()
     end
 
-    return BOPTestServicePlant(; boptest_url, testid, testcase, scenario)
+    endpoint = BOPTestServiceEndpoint(; boptest_url, testid)
+    forecast_points = DataFrame(_getpoints(endpoint("forecast_points")))
+    input_points = DataFrame(_getpoints(endpoint("inputs")))
+    measurement_points = DataFrame(_getpoints(endpoint("measurements")))
+
+    return BOPTestPlant(;
+        endpoint,
+        testcase,
+        scenario,
+        forecast_points,
+        input_points,
+        measurement_points,
+    )
 end
 
 
 """
     stop!(plant::AbstractBOPTestPlant)
 
-Stop a `BOPTestServicePlant` from running.
+Stop a `BOPTestPlant` from running.
 
 This method does nothing for plants run in normal BOPTEST.
 """
-function stop!(plant::BOPTestServicePlant)
+function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint})
     try
-        res = HTTP.put(_endpoint(plant, "stop"))
+        res = HTTP.put(plant.endpoint("stop"))
         res.status == 200 && println("Successfully stopped testid ", plant.testid)
     catch e
         if e isa HTTP.Exceptions.StatusError
@@ -301,7 +307,7 @@ function stop!(plant::BOPTestServicePlant)
 end
 
 # Hopefully avoids user confusion
-stop!(p::BOPTestPlant) = println("Only plants in BOPTEST-Service can be stopped")
+stop!(p::BOPTestPlant{BOPTestEndpoint}) = println("Only plants in BOPTEST-Service can be stopped")
 
 
 """
@@ -358,7 +364,19 @@ function initboptest!(
         scenario = Dict()
     end
 
-    return BOPTestPlant(; boptest_url, testcase, scenario)
+    endpoint = BOPTestEndpoint(; boptest_url)
+    forecast_points = DataFrame(_getpoints(endpoint("forecast_points")))
+    input_points = DataFrame(_getpoints(endpoint("inputs")))
+    measurement_points = DataFrame(_getpoints(endpoint("measurements")))
+
+    return BOPTestPlant(;
+        endpoint,
+        testcase,
+        scenario,
+        forecast_points,
+        input_points,
+        measurement_points,
+    )
 end
 
 
@@ -374,27 +392,6 @@ function printinfo(plant::AbstractBOPTestPlant, d::AbstractDict)
         end
     end
 end
-
-"""
-    inputpoints(plant::AbstractBOPTestPlant)
-
-Get the available input signals for the plant.
-"""
-inputpoints(plant::AbstractBOPTestPlant) = _getpoints(plant, "inputs")
-
-"""
-    measurementpoints(plant::AbstractBOPTestPlant)
-
-Get the available measurement signals for the plant.
-"""
-measurementpoints(plant::AbstractBOPTestPlant) = _getpoints(plant, "measurements")
-
-"""
-    forecastpoints(plant::AbstractBOPTestPlant)
-
-Get the available forecast signals for the plant.
-"""
-forecastpoints(plant::AbstractBOPTestPlant) =  _getpoints(plant, "forecast_points")
 
 
 """
