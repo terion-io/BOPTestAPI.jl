@@ -7,11 +7,16 @@ using Test
 @testset "BOPTestAPI.jl" begin
     testcase = "bestest_hydronic"
     dt = 300.0
+    scenario = Dict(
+        "electricity_price" => "highly_dynamic",
+    # Note: This seems to not work on the server side
+    #    "time_period" => "typical_heat_day" 
+    )
 
     # To use BOPTEST-service
     plant = initboptestservice!(
         BOPTEST_SERVICE_DEF_URL, testcase, dt;
-        verbose = true
+        scenario, verbose = true
     )
     
     # To use BOPTEST

@@ -205,9 +205,12 @@ function initboptest!(
             ["Content-Type" => "application/json"],
             JSON.json(scenario)
         )
+        res.status != 200 && error("Error setting scenario")
+
         verbose && println("Initialized scenario with ", repr(scenario))
     else
-        scenario = Dict()
+        res = HTTP.get(plant.api_endpoint("scenario"))
+        scenario = JSON.parse(String(res.body))["payload"]
     end
 
     forecast_points = DataFrame(_getpoints(api_endpoint("forecast_points")))
