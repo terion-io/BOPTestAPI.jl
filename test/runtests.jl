@@ -1,3 +1,5 @@
+import BOPTestAPI: AbstractBOPTestPlant
+
 using BOPTestAPI
 using DataFrames
 using Test
@@ -5,34 +7,38 @@ using Test
 @testset "BOPTestAPI.jl" begin
     testcase = "bestest_hydronic"
     dt = 300.0
+    scenario = Dict(
+        "electricity_price" => "highly_dynamic",
+    # Note: This seems to not work on the server side
+    #    "time_period" => "typical_heat_day" 
+    )
 
     # To use BOPTEST-service
     plant = initboptestservice!(
         BOPTEST_SERVICE_DEF_URL, testcase, dt;
-        verbose = true
+        scenario, verbose = true
     )
     
     # To use BOPTEST
     # plant = initboptest!(BOPTEST_DEF_URL, dt)
     try
-        @test plant isa BOPTestAPI.AbstractBOPTestPlant
+        @test plant isa AbstractBOPTestPlant
         
-        fcpts = DataFrame(forecastpoints(plant))
+        fcpts = plant.forecast_points
         @test "Name" in names(fcpts)
         @test size(fcpts, 1) > 0
 
-        # Piping syntax should also work
-        mpts = plant |> measurementpoints |> DataFrame
-        @test size(mpts, 1) > 0
+        @test size(plant.measurement_points, 1) > 0
 
-        res = getmeasurements(plant, mpts.Name, 0.0, 0.0) # Dict
-        @test "time" in keys(res)
-        @test res["reaPPum_y"] isa AbstractVector
+        dfres = getmeasurements(plant, 0.0, 0.0) # DataFrame
+        @test "time" in names(dfres)
+        @test dfres[!, "reaPPum_y"] isa AbstractVector{Float64}
 
         # Get forecast
         N = 12
-        fc = getforecasts(plant, fcpts.Name, N * 3600, 3600) |> DataFrame
+        fc = getforecasts(plant, N * 3600, 3600, ["lat", "lon"])
         @test size(fc, 1) == N + 1
+        @test size(fc, 2) == 3
 
         # Control inputs
         u = controlinputs(plant)
@@ -40,9 +46,16 @@ using Test
         @test u["ovePum_activate"] == 1
 
         # Baseline open-loop control
-        df = openloopsim!(plant, N, include_forecast = true)
+        res = []
+        u = Dict()
+        for t = 1:N
+            y = advance!(plant, u)
+            push!(res, y)
+        end
+
+        df = DataFrame(res)
         @test df.time[2] - df.time[1] == dt
-        @test size(df, 1) == N + 1
+        @test size(df, 1) == N
 
         # KPI
         kpi = getkpi(plant)
