@@ -209,7 +209,7 @@ function initboptest!(
 
         verbose && println("Initialized scenario with ", repr(scenario))
     else
-        res = HTTP.get(plant.api_endpoint("scenario"))
+        res = HTTP.get(api_endpoint("scenario"))
         scenario = JSON.parse(String(res.body))["payload"]
     end
 
