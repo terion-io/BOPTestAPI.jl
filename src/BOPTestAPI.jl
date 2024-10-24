@@ -24,8 +24,6 @@ URL of the NREL BOPTEST-Service API.
 """
 const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
 
-abstract type AbstractBOPTestPlant end
-
 abstract type AbstractBOPTestEndpoint end
 
 # BOPTEST-Service (https://github.com/NREL/boptest-service)
@@ -49,6 +47,7 @@ function (base::BOPTestServiceEndpoint)(service::AbstractString)
     return "$(base.base_url)/$service/$(base.testid)"
 end
 
+abstract type AbstractBOPTestPlant end
 
 """
     struct BOPTestPlant <: AbstractBOPTestPlant
@@ -56,7 +55,7 @@ end
 Metadata for a BOPTEST plant.
 
 """
-struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
+Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
     api_endpoint::EP
     testcase::AbstractString
     scenario::AbstractDict
@@ -117,41 +116,6 @@ end
 
 ## Public API
 """
-    controlinputs([f::Function, ]plant::AbstractBOPTestPlant)
-
-Return `Dict` with control signals for BOPTEST.
-
-This method calls `inputpoints(plant)` to gather available inputs,
-and then creates a `Dict` with the available inputs as keys and
-default values defined by function `f`.
-
-`f` is a function that is applied to a `DataFrame` constructed from
-the input points that have a suffix "_u", i.e. control inputs. The `DataFrame`
-normally has columns `:Name`, `:Minimum`, `:Maximum`, `:Unit`, `:Description`.
-
-The default for `f` is `df -> df[!, :Minimum]`, i.e. use the minimum allowed 
-input.
-"""
-function controlinputs(f::Function, plant::AbstractBOPTestPlant)
-    # Default for u: override all controls -> "*_activate" = 1
-    # and send u = dfmap(Name)
-    override_sigs = subset(
-        plant.input_points,
-        :Name => s -> endswith.(s, "_activate")
-    )
-    u_sigs = subset(plant.input_points, :Name => s -> endswith.(s, "_u"))
-
-    u = Dict(
-        Pair.(override_sigs.Name, 1)...,
-        Pair.(u_sigs.Name, f(u_sigs))...,
-    )
-    return u
-end
-
-controlinputs(p::AbstractBOPTestPlant) = controlinputs(df -> df[!, :Minimum], p)
-
-
-"""
     initboptestservice!(boptest_url, testcase, dt[; init_vals, scenario, verbose])
 
 Initialize a testcase in BOPTEST service with step size dt.
@@ -187,33 +151,6 @@ function initboptestservice!(
 
     return initboptest!(api_endpoint, dt; kwargs...)
 
-end
-
-
-"""
-    stop!(plant::AbstractBOPTestPlant)
-
-Stop a `BOPTestPlant` from running.
-
-This method does nothing for plants run in normal BOPTEST.
-"""
-function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint})
-    try
-        res = HTTP.put(plant.api_endpoint("stop"))
-        res.status == 200 && println("Successfully stopped testid ", plant.testid)
-    catch e
-        if e isa HTTP.Exceptions.StatusError
-            payload = JSON.parse(String(e.response.body))
-            println(payload["errors"][1]["msg"])
-        else
-            rethrow(e)
-        end
-    end
-end
-
-# Hopefully avoids user confusion
-function stop!(::BOPTestPlant{BOPTestEndpoint})
-    println("Only plants in BOPTEST-Service can be stopped")
 end
 
 
@@ -304,34 +241,28 @@ end
 
 
 """
-    getmeasurements(plant::AbstractBOPTestPlant [, points], starttime, finaltime)
+    getmeasurements(plant::AbstractBOPTestPlant, starttime, finaltime[, points])
 
-Query measurements from BOPTEST server.
+Query measurements from BOPTEST server and return as `DataFrame`.
 
 # Arguments
 - `plant` : The plant to query measurements from.
-- `points::AbstractVector{AbstractString}` : The measurement point names to query.
 - `starttime::Real` : Start time for measurements time series, in seconds.
 - `finaltime::Real` : Final time for measurements time series, in seconds.
+- `points::AbstractVector{AbstractString}` : The measurement point names to query. Optional.
+## Keyword Arguments
+- `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. If
+set to `false`, the columns will have type `Any`.
 
-To obtain available measurement points, use `measurementpoints(plant)`, which returns 
-a vector of `Dict`. Each element in the vector has an entry with key "Name". The recommended
-way is to make use of a `DataFrame`, i.e.
-
-```julia
-mpts = DataFrame(measurementpoints(plant))
-# Alternative:
-# mpts = plant |> measurementpoints |> DataFrame
-
-res = getmeasurements(plant, mpts.Name, 0.0, 12 * 3600.0)
-```
+To obtain available measurement points, use `plant.measurement_points`, which is a 
+`DataFrame` with a column `:Name` that contains all available signals.
 """
 function getmeasurements(
     plant::AbstractBOPTestPlant,
-    points,
     starttime::Real,
-    finaltime::Real;
-    coerce_f64::Bool = true,
+    finaltime::Real,
+    points = plant.measurement_points.Name;
+    convert_f64::Bool = true,
     kwargs...
 )
     body = Dict(
@@ -341,7 +272,7 @@ function getmeasurements(
     )
     data = _getdata(plant.api_endpoint("results"), body; kwargs...)
     df = DataFrame(data)
-    if coerce_f64
+    if convert_f64
         try
             mapcols!(c -> Float64.(c), df)
         catch e
@@ -351,29 +282,29 @@ function getmeasurements(
     return df
 end
 
-function getmeasurements(p::AbstractBOPTestPlant, s::Real, f::Real; kwargs...)
-    return getmeasurements(p, p.measurement_points.Name, s, f)
-end
 
 """
-    getforecasts(plant::AbstractBOPTestPlant [, points], horizon, interval)
+    getforecasts(plant::AbstractBOPTestPlant, horizon, interval[, points])
 
-Query forecast from BOPTEST server.
+Query forecast from BOPTEST server and return as `DataFrame`.
 
 # Arguments
 - `plant` : The plant to query forecast from.
-- `points::AbstractVector{AbstractString}` : The forecast point names to query.
 - `horizon::Real` : Forecast time horizon from current time step, in seconds.
 - `interval::Real` : Time step size for the forecast data, in seconds.
+- `points::AbstractVector{AbstractString}` : The forecast point names to query. Optional.
+## Keyword Arguments
+- `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. If
+set to `false`, the columns will have type `Any`.
 
 Available forecast points are stored in `plant.forecast_points`. 
 """
 function getforecasts(
     plant::AbstractBOPTestPlant,
-    points,
     horizon::Real,
-    interval::Real;
-    coerce_f64::Bool = true,
+    interval::Real,
+    points = plant.forecast_points.Name;
+    convert_f64::Bool = true,
     kwargs...
 )
     body = Dict(
@@ -383,7 +314,7 @@ function getforecasts(
     )
     data = _getdata(plant.api_endpoint("forecast"), body; kwargs...)
     df = DataFrame(data)
-    if coerce_f64
+    if convert_f64
         try
             mapcols!(c -> Float64.(c), df)
         catch e
@@ -393,9 +324,6 @@ function getforecasts(
     return df
 end
 
-function getforecasts(p::AbstractBOPTestPlant, h::Real, i::Real; kwargs...)
-    return getforecasts(p, p.forecast_points.Name, h, i; kwargs...)
-end
 
 """
     advance!(plant::AbstractBOPTestPlant, u::AbstractDict)
@@ -419,5 +347,68 @@ function advance!(plant::AbstractBOPTestPlant, u::AbstractDict)
 	payload_dict = JSON.parse(String(res.body))["payload"]
     return payload_dict
 end
+
+
+"""
+    stop!(plant::AbstractBOPTestPlant)
+
+Stop a `BOPTestPlant` from running.
+
+This method does nothing for plants run in normal BOPTEST 
+(i.e. not BOPTEST-Service).
+"""
+function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint})
+    try
+        res = HTTP.put(plant.api_endpoint("stop"))
+        res.status == 200 && println("Successfully stopped testid ", plant.testid)
+    catch e
+        if e isa HTTP.Exceptions.StatusError
+            payload = JSON.parse(String(e.response.body))
+            println(payload["errors"][1]["msg"])
+        else
+            rethrow(e)
+        end
+    end
+end
+
+# Hopefully avoids user confusion
+function stop!(::BOPTestPlant{BOPTestEndpoint})
+    println("Only plants in BOPTEST-Service can be stopped")
+end
+
+
+"""
+    controlinputs([f::Function, ]plant::AbstractBOPTestPlant)
+
+Return `Dict` with control signals for BOPTEST.
+
+This method calls `inputpoints(plant)` to gather available inputs,
+and then creates a `Dict` with the available inputs as keys and
+default values defined by function `f`.
+
+`f` is a function that is applied to a `DataFrame` constructed from
+the input points that have a suffix "_u", i.e. control inputs. The `DataFrame`
+normally has columns `:Name`, `:Minimum`, `:Maximum`, `:Unit`, `:Description`.
+
+The default for `f` is `df -> df[!, :Minimum]`, i.e. use the minimum allowed 
+input.
+"""
+function controlinputs(f::Function, plant::AbstractBOPTestPlant)
+    # Default for u: override all controls -> "*_activate" = 1
+    # and send u = dfmap(Name)
+    override_sigs = subset(
+        plant.input_points,
+        :Name => s -> endswith.(s, "_activate")
+    )
+    u_sigs = subset(plant.input_points, :Name => s -> endswith.(s, "_u"))
+
+    u = Dict(
+        Pair.(override_sigs.Name, 1)...,
+        Pair.(u_sigs.Name, f(u_sigs))...,
+    )
+    return u
+end
+
+controlinputs(p::AbstractBOPTestPlant) = controlinputs(df -> df[!, :Minimum], p)
 
 end
