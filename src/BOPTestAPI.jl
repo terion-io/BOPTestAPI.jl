@@ -141,6 +141,7 @@ function initboptestservice!(
     res = HTTP.post(
         "$boptest_url/testcases/$testcase/select",
         ["Content-Type" => "application/json"],
+        JSON.json(Dict()) # This is needed as empty body
     )
     res.status != 200 && error("Could not select BOPTest testcase")
 
@@ -170,7 +171,7 @@ Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
 
 """
 function initboptest!(
-    api_endpoint::BOPTestEndpoint,
+    api_endpoint::AbstractBOPTestEndpoint,
     dt::Real;
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
     scenario::Union{Nothing, AbstractDict} = nothing,
@@ -360,7 +361,9 @@ This method does nothing for plants run in normal BOPTEST
 function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint})
     try
         res = HTTP.put(plant.api_endpoint("stop"))
-        res.status == 200 && println("Successfully stopped testid ", plant.testid)
+        res.status == 200 && println(
+            "Successfully stopped testid ", plant.api_endpoint.testid
+        )
     catch e
         if e isa HTTP.Exceptions.StatusError
             payload = JSON.parse(String(e.response.body))

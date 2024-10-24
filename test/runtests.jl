@@ -9,13 +9,13 @@ using Test
     dt = 300.0
 
     # To use BOPTEST-service
-    # plant = initboptestservice!(
-    #     BOPTEST_SERVICE_DEF_URL, testcase, dt;
-    #     verbose = true
-    # )
+    plant = initboptestservice!(
+        BOPTEST_SERVICE_DEF_URL, testcase, dt;
+        verbose = true
+    )
     
     # To use BOPTEST
-    plant = initboptest!(BOPTEST_DEF_URL, dt)
+    # plant = initboptest!(BOPTEST_DEF_URL, dt)
     try
         @test plant isa AbstractBOPTestPlant
         
