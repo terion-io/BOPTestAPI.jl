@@ -144,12 +144,8 @@ This function does nothing when called on a "normal" `BOPTestPlant`
 BOPTEST_DEF_URL
 BOPTEST_SERVICE_DEF_URL
 BOPTestPlant
-BOPTestServicePlant
 initboptest!
 initboptestservice!
-forecastpoints
-inputpoints
-measurementpoints
 getforecasts
 getmeasurements
 getkpi
