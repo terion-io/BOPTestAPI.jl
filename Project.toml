@@ -1,7 +1,7 @@
 name = "BOPTestAPI"
 uuid = "4c862b9d-90c3-47b4-a9d1-cc1c4398311d"
 authors = ["Bertrand Kerres"]
-version = "0.2.0-DEV"
+version = "0.2.0"
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
