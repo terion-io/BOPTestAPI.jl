@@ -122,13 +122,13 @@ Initialize a testcase in BOPTEST service with step size dt.
 
 # Arguments
 - `boptest_url`: URL of the BOPTEST-Service API to initialize.
-- `testcase` : Name of the test case.
+- `testcase` : Name of the test case, [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
 - `dt`: Time step in seconds.
 - `init_vals::Dict`: Parameters for the initialization.
 - `scenario::Dict` : Parameters for scenario selection.
 - `verbose::Bool`: Print something to stdout.
 
-Return a `BOPTestServicePlant` instance, or throw an `ErrorException` on error.
+Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
 
 """
 function initboptestservice!(
@@ -255,8 +255,8 @@ Query measurements from BOPTEST server and return as `DataFrame`.
 - `finaltime::Real` : Final time for measurements time series, in seconds.
 - `points::AbstractVector{AbstractString}` : The measurement point names to query. Optional.
 ## Keyword Arguments
-- `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. If
-set to `false`, the columns will have type `Any`.
+- `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. \
+If set to `false`, the columns will have type `Any`.
 
 To obtain available measurement points, use `plant.measurement_points`, which is a 
 `DataFrame` with a column `:Name` that contains all available signals.
@@ -298,8 +298,8 @@ Query forecast from BOPTEST server and return as `DataFrame`.
 - `interval::Real` : Time step size for the forecast data, in seconds.
 - `points::AbstractVector{AbstractString}` : The forecast point names to query. Optional.
 ## Keyword Arguments
-- `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. If
-set to `false`, the columns will have type `Any`.
+- `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. \
+If set to `false`, the columns will have type `Any`.
 
 Available forecast points are stored in `plant.forecast_points`. 
 """
