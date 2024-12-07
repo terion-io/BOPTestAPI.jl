@@ -19,7 +19,7 @@ using Latexify # hide
 dt = 900.0 # time step in seconds
 testcase = "bestest_hydronic"
 
-plant = initboptestservice!(BOPTEST_SERVICE_DEF_URL, testcase, dt)
+plant = BOPTestPlant("http://api.boptest.net", testcase, dt=dt)
 
 # Get available measurement points
 mpts = plant.measurement_points
@@ -77,15 +77,16 @@ The general idea is that the BOPTEST services are abstracted away as a `BOPTestP
 The package then defines common functions to operate on the plant, which are translated to REST API calls and the required data formattings.
 
 ### Initialization
-It is recommended to create plants using the initialization functions:
+Use the `BOPTestPlant` constructor:
 
 ```julia
 dt = 900.0 # time step in seconds
-local_plant = initboptest!(BOPTEST_DEF_URL, dt)
 
-# and / or
 testcase = "bestest_hydronic"
-remote_plant = initboptestservice!(BOPTEST_SERVICE_DEF_URL, testcase, dt)
+plant = BOPTestPlant("http://localhost", testcase, dt = dt)
+
+# For old BOPTEST < v0.7, use the deprecated initboptest! function
+old_plant = initboptest!("http://127.0.0.1:5000", dt = dt)
 ```
 
 The initialization functions also query and store the available signals (as `DataFrame`),
@@ -130,22 +131,15 @@ kpi = getkpi(plant)
 ```
 
 #### Stop
-When using BOPTEST-Service, be nice to NREL (or whoever is hosting) and stop a test case when no longer needed:
+Stop a test case when no longer needed:
 
 ```julia
-stop!(remote_plant)
+stop!(plant)
 ```
-
-This function does nothing when called on a "normal" `BOPTestPlant`
-
 
 ## API
 ```@docs
-BOPTEST_DEF_URL
-BOPTEST_SERVICE_DEF_URL
 BOPTestPlant
-initboptest!
-initboptestservice!
 getforecasts
 getmeasurements
 getkpi
