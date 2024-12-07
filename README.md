@@ -37,7 +37,7 @@ local_plant = BOPTestPlant("http://localhost", testcase)
 
 # !! Note: For BOPTEST < v0.7 use this for local deployed test cases
 # The test case is then set when starting up BOPTEST
-local_plant = initboptest!("http://localhost")
+local_plant = initboptest!("http://127.0.0.1:5000")
 
 ```
 
@@ -60,6 +60,7 @@ the keyword argument `convert_f64=false` to disable conversion.
 
 ```julia
 # Query forecast data for 24 hours, with 1/dt sampling frequency
+dt = 900.0
 fc = getforecasts(plant, 24*3600, dt)
 ```
 
