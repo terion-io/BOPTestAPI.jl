@@ -2,27 +2,18 @@ module BOPTestAPI
 
 export BOPTestPlant
 export controlinputs
-export initboptest!, initboptestservice!, advance!, stop!
+export initboptest!, advance!, stop!
 export getforecasts, getmeasurements, getkpi
-export BOPTEST_DEF_URL, BOPTEST_SERVICE_DEF_URL
 
 using HTTP
 using JSON
 using DataFrames
 
-"""
-    const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
+# const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
+Base.@deprecate_binding BOPTEST_DEF_URL "http://127.0.0.1:5000"
 
-Default URL when starting BOPTEST locally,
-"""
-const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
-
-"""
-    const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
-
-URL of the NREL BOPTEST-Service API.
-"""
-const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
+# const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
+Base.@deprecate_binding BOPTEST_SERVICE_DEF_URL "http://api.boptest.net"
 
 abstract type AbstractBOPTestEndpoint end
 
@@ -64,6 +55,30 @@ Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTes
     input_points::AbstractDataFrame
     measurement_points::AbstractDataFrame
 end
+
+"""
+    BOPTestPlant(boptest_url, testcase, dt[; init_vals, scenario, verbose])
+
+Initialize a testcase in BOPTEST service with step size dt.
+
+# Arguments
+- `boptest_url`: URL of the BOPTEST-Service API to initialize.
+- `testcase` : Name of the test case, [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
+- `dt`: Time step in seconds.
+- `init_vals::Dict`: Parameters for the initialization.
+- `scenario::Dict` : Parameters for scenario selection.
+- `verbose::Bool`: Print something to stdout.
+
+"""
+function BOPTestPlant(
+    boptest_url::AbstractString,
+    testcase::AbstractString,
+    dt::Real;
+    kwargs...
+)
+    return _initboptestservice!(boptest_url, testcase, dt; kwargs...)
+end
+
 
 function Base.show(io::IO, plant::T) where {T <: AbstractBOPTestPlant}
     print(io, "$T(", plant.api_endpoint.base_url, ")")
@@ -113,25 +128,7 @@ function _getpoints(endpoint::AbstractString)
     return yvars
 end
 
-
-## Public API
-"""
-    initboptestservice!(boptest_url, testcase, dt[; init_vals, scenario, verbose])
-
-Initialize a testcase in BOPTEST service with step size dt.
-
-# Arguments
-- `boptest_url`: URL of the BOPTEST-Service API to initialize.
-- `testcase` : Name of the test case, [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
-- `dt`: Time step in seconds.
-- `init_vals::Dict`: Parameters for the initialization.
-- `scenario::Dict` : Parameters for scenario selection.
-- `verbose::Bool`: Print something to stdout.
-
-Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
-
-"""
-function initboptestservice!(
+function _initboptestservice!(
     boptest_url::AbstractString,
     testcase::AbstractString,
     dt::Real;
@@ -154,30 +151,13 @@ function initboptestservice!(
 
 end
 
-
-"""
-    initboptest!(boptest_url, dt[; init_vals, scenario, verbose])
-
-Initialize the BOPTEST server with step size dt.
-
-# Arguments
-- `boptest_url`: URL of the BOPTEST server to initialize.
-- `dt`: Time step in seconds.
-- `init_vals::Dict`: Parameters for the initialization.
-- `scenario::Dict` : Parameters for scenario selection.
-- `verbose::Bool`: Print something to stdout.
-
-Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
-
-"""
-function initboptest!(
+function _initboptest!(
     api_endpoint::AbstractBOPTestEndpoint,
     dt::Real;
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
     scenario::Union{Nothing, AbstractDict} = nothing,
     verbose::Bool = false,
 )
-
     # Initialize
     res = HTTP.put(
         api_endpoint("initialize"),
@@ -227,11 +207,46 @@ function initboptest!(
     )
 end
 
+## Public API
+
+@deprecate initboptestservice!(boptest_url, testcase, dt; kwargs...) BOPTestPlant(boptest_url, testcase, dt; kwargs...)
+
+
+"""
+    initboptest!(boptest_url, dt[; init_vals, scenario, verbose])
+
+Initialize the BOPTEST server with step size dt.
+
+# Arguments
+- `boptest_url`: URL of the BOPTEST server to initialize.
+- `dt`: Time step in seconds.
+- `init_vals::Dict`: Parameters for the initialization.
+- `scenario::Dict` : Parameters for scenario selection.
+- `verbose::Bool`: Print something to stdout.
+
+Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
+
+"""
+function initboptest!(
+    api_endpoint::AbstractBOPTestEndpoint,
+    dt::Real;
+    init_vals = Dict("start_time" => 0, "warmup_period" => 0),
+    scenario::Union{Nothing, AbstractDict} = nothing,
+    verbose::Bool = false,
+)
+    Base.depwarn(
+        "`initboptest!` is deprecated since v0.3.0 and will be removed" *
+        " from the public API in a future release.",
+        initboptest!,
+    )
+
+    return _initboptest!(api_endpoint, dt; init_vals, scenario, verbose)
+end
+
 function initboptest!(boptest_url::AbstractString, args...; kwargs...)
     api_endpoint = BOPTestEndpoint(boptest_url)
     return initboptest!(api_endpoint, args...; kwargs...)
 end
-
 
 """
     getkpi(plant::AbstractBOPTestPlant)
