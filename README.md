@@ -19,25 +19,26 @@ The package then defines common functions to operate on the plant, which are tra
 
 ### Initialization
 There are two subtypes of plants, depending on whether they run in BOPTEST or BOPTEST-Service:
-* For normal BOPTEST (type `BOPTestPlant{BOPTestEndpoint}`), the test case is specified when starting the service, and there is no test ID since only a single plant is running.
-* For BOPTEST-Service (type `BOPTestPlant{BOPTesServicetEndpoint}`), the test case needs to be specified explicitly, and a `testid` UUID is returned by the server that is stored as endpoint metadata.
+* Type `BOPTestPlant{BOPTestEndpoint}`, for local BOPTEST `< v0.7`. The test case is specified when starting the service, and there is no test ID since only a single plant is running. Use `initboptest!(url)` for creating a plant.
+* Type `BOPTestPlant{BOPTesServiceEndpoint}`, for BOPTEST `>= v0.7` or remote plants. The test case needs to be specified explicitly, and a `testid` UUID is returned by the server that is stored as endpoint metadata. Use `BOPTestPlant(url, testcase)` for creating a plant.
+
+> [!IMPORTANT]
+> BOPTEST from version `v0.7.0` uses the BOPTEST-service API even on local deployment. Thus, since BOPTestAPI v0.3, the `BOPTestPlant` constructor is overloaded and can be used directly.
 
 > [!TIP]
 > For a plant instance, `plant.api_endpoint(service)` is callable and returns the endpoint of a specific service as `String`, this can be useful for defining additional functions.
 
-It is recommended to create plants using the initialization functions:
-
 ```julia
-# BOPTEST_DEF_URL points to "127.0.0.1:5000", which is the BOPTEST default
-# BOPTEST_SERVICE_DEF_URL points to "http://api.boptest.net", which is where
-# NREL hosts the BOPTEST API
-
-dt = 900.0 # time step in seconds
-local_plant = initboptest!(BOPTEST_DEF_URL, dt)
-
-# and / or
 testcase = "bestest_hydronic"
-remote_plant = initboptestservice!(BOPTEST_SERVICE_DEF_URL, testcase, dt)
+# NREL hosts the BOPTEST API "http://api.boptest.net"
+remote_plant = BOPTestPlant("http://api.boptest.net", testcase)
+
+local_plant = BOPTestPlant("http://localhost", testcase)
+
+# !! Note: For BOPTEST < v0.7 use this for local deployed test cases
+# The test case is then set when starting up BOPTEST
+local_plant = initboptest!("http://localhost")
+
 ```
 
 The initialization functions also query and store the available signals (as `DataFrame`),
@@ -51,7 +52,7 @@ The package then defines common functions to operate on the plant, namely
 * `getforecasts`, `getmeasurements` to get the actual time series data for forecast or past measurements
 * `getkpi` to get the KPI for the test case (calculated by BOPTEST)
 * `advance!`, to step the plant one time step with user-specified control input
-* `stop!`, to stop a test case (BOPTEST-Service only)
+* `stop!`, to stop a test case
 
 #### Querying data
 The time series functions return a `DataFrame` with the time series. By default, a conversion to `Float64` is attempted (else the datatypes would be `Any`). You can use
@@ -78,10 +79,8 @@ kpi = getkpi(plant)
 ```
 
 #### Stop
-When using BOPTEST-Service, be nice to NREL (or whoever is hosting) and stop a test case when no longer needed:
+Stop a test case when no longer needed:
 
 ```julia
-stop!(remote_plant)
+stop!(plant)
 ```
-
-This function does nothing when called on a "normal" `BOPTestPlant`.

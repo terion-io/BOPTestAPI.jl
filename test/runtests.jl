@@ -14,13 +14,13 @@ using Test
     )
 
     # To use BOPTEST-service
-    plant = initboptestservice!(
-        BOPTEST_SERVICE_DEF_URL, testcase, dt;
-        scenario, verbose = true
+    # base_url = "http://localhost"
+    base_url = "http://api.boptest.net"
+    plant = BOPTestPlant(
+        base_url, testcase;
+        dt, scenario, verbose = true
     )
     
-    # To use BOPTEST
-    # plant = initboptest!(BOPTEST_DEF_URL, dt)
     try
         @test plant isa AbstractBOPTestPlant
         
