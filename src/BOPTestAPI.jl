@@ -140,7 +140,7 @@ function _initboptestservice!(
 
     api_endpoint = BOPTestServiceEndpoint(boptest_url, testid)
 
-    return initboptest!(api_endpoint; kwargs...)
+    return _initboptest!(api_endpoint; kwargs...)
 
 end
 
