@@ -140,6 +140,7 @@ stop!(plant)
 ## API
 ```@docs
 BOPTestPlant
+initboptest!
 getforecasts
 getmeasurements
 getkpi

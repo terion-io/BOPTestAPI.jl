@@ -36,7 +36,7 @@ remote_plant = BOPTestPlant("http://api.boptest.net", testcase)
 local_plant = BOPTestPlant("http://localhost", testcase)
 
 # !! Note: For BOPTEST < v0.7 use this for local deployed test cases
-# The test case is thenset when starting up BOPTEST
+# The test case is then set when starting up BOPTEST
 local_plant = initboptest!("http://localhost")
 
 ```

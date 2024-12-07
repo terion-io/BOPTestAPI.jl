@@ -41,9 +41,18 @@ end
 abstract type AbstractBOPTestPlant end
 
 """
-    struct BOPTestPlant <: AbstractBOPTestPlant
+    BOPTestPlant(boptest_url, testcase[; dt, init_vals, scenario, verbose])
 
-Metadata for a BOPTEST plant.
+Initialize a testcase in BOPTEST service with step size dt.
+
+# Arguments
+- `boptest_url`: URL of the BOPTEST-Service API to initialize.
+- `testcase` : Name of the test case, [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
+## Keyword arguments
+- `dt::Real`: Time step in seconds.
+- `init_vals::AbstractDict`: Parameters for the initialization.
+- `scenario::AbstractDict` : Parameters for scenario selection.
+- `verbose::Bool`: Print something to stdout.
 
 """
 Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
@@ -56,22 +65,6 @@ Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTes
     measurement_points::AbstractDataFrame
 end
 
-"""
-    BOPTestPlant(boptest_url, testcase, dt[; init_vals, scenario, verbose])
-
-Initialize a testcase in BOPTEST service with step size dt.
-
-# Arguments
-## Required arguments
-- `boptest_url`: URL of the BOPTEST-Service API to initialize.
-- `testcase` : Name of the test case, [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
-## Keyword arguments
-- `dt::Real`: Time step in seconds.
-- `init_vals::AbstractDict`: Parameters for the initialization.
-- `scenario::AbstractDict` : Parameters for scenario selection.
-- `verbose::Bool`: Print something to stdout.
-
-"""
 function BOPTestPlant(
     boptest_url::AbstractString,
     testcase::AbstractString;
@@ -210,17 +203,15 @@ function _initboptest!(
 end
 
 ## Public API
-
 @deprecate initboptestservice!(boptest_url, testcase, dt; kwargs...) BOPTestPlant(boptest_url, testcase; dt, kwargs...)
 
 
 """
-    initboptest!(boptest_url, dt[; init_vals, scenario, verbose])
+    initboptest!(boptest_url[; dt, init_vals, scenario, verbose])
 
-Initialize the BOPTEST server with step size dt.
+[**Warning:** Deprecated.] Initialize the local BOPTEST server.
 
 # Arguments
-## Required
 - `boptest_url`: URL of the BOPTEST server to initialize.
 ## Keyword arguments
 - `dt::Real`: Time step in seconds.
@@ -229,6 +220,9 @@ Initialize the BOPTEST server with step size dt.
 - `verbose::Bool`: Print something to stdout.
 
 Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
+
+**Warning:** This function is deprecated, since BOPTEST v0.7 switched to the
+BOPTEST-Service API. Use it for a locally deployed `BOPTEST < v0.7`.
 
 """
 function initboptest!(
