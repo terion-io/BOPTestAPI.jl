@@ -8,6 +8,9 @@ export getforecasts, getmeasurements, getkpi
 using HTTP
 using JSON
 using DataFrames
+using Logging
+
+const _DEF_TIMEOUT = 30
 
 # const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
 Base.@deprecate_binding BOPTEST_DEF_URL "http://127.0.0.1:5000"
@@ -90,9 +93,9 @@ end
 
 ## Private functions
 
-function _getdata(endpoint::AbstractString, body; timeout = 30.0)
-    put_hdr = ["Content-Type" => "application/json", "connecttimeout" => timeout]
-    res = HTTP.put(endpoint, put_hdr, JSON.json(body))
+function _getdata(endpoint::AbstractString, body; timeout = _DEF_TIMEOUT)
+    put_hdr = ["Content-Type" => "application/json"]
+    res = HTTP.put(endpoint, put_hdr, JSON.json(body), readtimeout = timeout)
     payload = JSON.parse(String(res.body))["payload"]
 
     d = Dict("time" => payload["time"])
@@ -104,8 +107,8 @@ function _getdata(endpoint::AbstractString, body; timeout = 30.0)
 end
 
 
-function _getpoints(endpoint::AbstractString)
-	yvars_res = HTTP.get(endpoint)
+function _getpoints(endpoint::AbstractString; timeout = _DEF_TIMEOUT)
+	yvars_res = HTTP.get(endpoint, readtimeout = timeout)
 	yvars_dict = JSON.parse(String(yvars_res.body))["payload"]
 	yvars = []
 	for (k, v_dict) in yvars_dict
@@ -125,14 +128,24 @@ end
 function _initboptestservice!(
     boptest_url::AbstractString,
     testcase::AbstractString;
+    timeout = _DEF_TIMEOUT,
     kwargs...
 )
     # Select testcase
-    res = HTTP.post(
-        "$boptest_url/testcases/$testcase/select",
-        ["Content-Type" => "application/json"],
-        JSON.json(Dict()) # This is needed as empty body
-    )
+    res = try
+        HTTP.post(
+            "$boptest_url/testcases/$testcase/select",
+            ["Content-Type" => "application/json"],
+            JSON.json(Dict()), # This is needed as empty body
+            readtimeout = timeout,
+        )
+    catch e
+        if e isa HTTP.Exceptions.TimeoutError
+            @error "TimeoutError. Hint: Check available number of workers"
+        end
+        rethrow(e)
+    end
+
     res.status != 200 && error("Could not select BOPTest testcase")
 
     payload = JSON.parse(String(res.body))
@@ -140,7 +153,7 @@ function _initboptestservice!(
 
     api_endpoint = BOPTestServiceEndpoint(boptest_url, testid)
 
-    return _initboptest!(api_endpoint; kwargs...)
+    return _initboptest!(api_endpoint; timeout, kwargs...)
 
 end
 
@@ -150,12 +163,14 @@ function _initboptest!(
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
     scenario::Union{Nothing, AbstractDict} = nothing,
     verbose::Bool = false,
+    timeout::Real = _DEF_TIMEOUT,
 )
     # Initialize
     res = HTTP.put(
         api_endpoint("initialize"),
         ["Content-Type" => "application/json"],
-        JSON.json(init_vals)
+        JSON.json(init_vals),
+        readtimeout = timeout,
     )
     res.status != 200 && error("Error initializing testcase")
 
@@ -164,12 +179,13 @@ function _initboptest!(
         res = HTTP.put(
             api_endpoint("step"),
             ["Content-Type" => "application/json"],
-            JSON.json(Dict("step" => dt))
+            JSON.json(Dict("step" => dt)),
+            readtimeout = timeout,
         )
         res.status != 200 && error("Error setting time step")
     end
 
-    res = HTTP.get(api_endpoint("name"))
+    res = HTTP.get(api_endpoint("name"), readtimeout = timeout)
     testcase = JSON.parse(String(res.body))["payload"]["name"]
     verbose && println("Initialized testcase = '$testcase'")
     
@@ -178,13 +194,14 @@ function _initboptest!(
         res = HTTP.put(
             api_endpoint("scenario"),
             ["Content-Type" => "application/json"],
-            JSON.json(scenario)
+            JSON.json(scenario),
+            readtimeout = timeout,
         )
         res.status != 200 && error("Error setting scenario")
 
         verbose && println("Initialized scenario with ", repr(scenario))
     else
-        res = HTTP.get(api_endpoint("scenario"))
+        res = HTTP.get(api_endpoint("scenario"), readtimeout = timeout)
         scenario = JSON.parse(String(res.body))["payload"]
     end
 
@@ -231,6 +248,7 @@ function initboptest!(
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
     scenario::Union{Nothing, AbstractDict} = nothing,
     verbose::Bool = false,
+    timeout::Real = _DEF_TIMEOUT,
 )
     Base.depwarn(
         "`initboptest!` is deprecated since v0.3.0 and will be removed" *
@@ -238,7 +256,7 @@ function initboptest!(
         initboptest!,
     )
 
-    return _initboptest!(api_endpoint; dt, init_vals, scenario, verbose)
+    return _initboptest!(api_endpoint; dt, init_vals, scenario, verbose, timeout)
 end
 
 function initboptest!(boptest_url::AbstractString, args...; kwargs...)
@@ -251,8 +269,8 @@ end
 
 Get KPI from BOPTEST server as `Dict`.
 """
-function getkpi(plant::AbstractBOPTestPlant)
-    res = HTTP.get(plant.api_endpoint("kpi"))
+function getkpi(plant::AbstractBOPTestPlant; timeout::Real = _DEF_TIMEOUT)
+    res = HTTP.get(plant.api_endpoint("kpi"), readtimeout = timeout)
     return JSON.parse(String(res.body))["payload"]
 end
 
@@ -353,12 +371,17 @@ Step the plant using control input u.
 
 Returns the payload as `Dict{String, Vector}`.
 """
-function advance!(plant::AbstractBOPTestPlant, u::AbstractDict)
+function advance!(
+    plant::AbstractBOPTestPlant,
+    u::AbstractDict;
+    timeout::Real = _DEF_TIMEOUT,
+)
 	res = HTTP.post(
 		plant.api_endpoint("advance"),
 		["Content-Type" => "application/json"],
 		JSON.json(u);
-		retry_non_idempotent=true
+        readtimeout = timeout,
+		retry_non_idempotent = true
 	)
 	
 	payload_dict = JSON.parse(String(res.body))["payload"]
@@ -374,9 +397,9 @@ Stop a `BOPTestPlant` from running.
 This method does nothing for plants run in normal BOPTEST 
 (i.e. not BOPTEST-Service).
 """
-function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint})
+function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint}; timeout::Real = _DEF_TIMEOUT)
     try
-        res = HTTP.put(plant.api_endpoint("stop"))
+        res = HTTP.put(plant.api_endpoint("stop"), readtimeout = timeout)
         res.status == 200 && println(
             "Successfully stopped testid ", plant.api_endpoint.testid
         )
