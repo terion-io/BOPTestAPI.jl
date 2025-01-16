@@ -67,6 +67,9 @@ using Test
         kpi = getkpi(plant)
         @test kpi["ener_tot"] == 0
 
+        new_scenario = setscenario!(plant, Dict("electricity_price" => "dynamic"))
+        @test "electricity_price" in keys(new_scenario)
+
     catch e
         rethrow(e)
     finally
