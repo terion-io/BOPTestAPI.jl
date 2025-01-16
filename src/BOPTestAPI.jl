@@ -2,7 +2,7 @@ module BOPTestAPI
 
 export BOPTestPlant
 export controlinputs
-export initboptest!, advance!, stop!
+export initboptest!, initialize!, advance!, setscenario!, stop!
 export getforecasts, getmeasurements, getkpi
 
 using HTTP
@@ -153,8 +153,14 @@ function _initboptestservice!(
 
     api_endpoint = BOPTestServiceEndpoint(boptest_url, testid)
 
-    return _initboptest!(api_endpoint; timeout, kwargs...)
+    plant = try
+        _initboptest!(api_endpoint; timeout, kwargs...)
+    catch e
+        HTTP.put(api_endpoint("stop"), readtimeout = timeout)
+        rethrow(e)
+    end
 
+    return plant
 end
 
 function _initboptest!(
@@ -165,14 +171,7 @@ function _initboptest!(
     verbose::Bool = false,
     timeout::Real = _DEF_TIMEOUT,
 )
-    # Initialize
-    res = HTTP.put(
-        api_endpoint("initialize"),
-        ["Content-Type" => "application/json"],
-        JSON.json(init_vals),
-        readtimeout = timeout,
-    )
-    res.status != 200 && error("Error initializing testcase")
+    initialize!(api_endpoint; init_vals, timeout)
 
     # Set simulation step
     if !isnothing(dt)
@@ -190,19 +189,13 @@ function _initboptest!(
     verbose && println("Initialized testcase = '$testcase'")
     
     # Set scenario (electricity prices, ...)
-    if !isnothing(scenario)
-        res = HTTP.put(
-            api_endpoint("scenario"),
-            ["Content-Type" => "application/json"],
-            JSON.json(scenario),
-            readtimeout = timeout,
-        )
-        res.status != 200 && error("Error setting scenario")
-
+    scenario = if !isnothing(scenario)
+        sc = setscenario!(api_endpoint, scenario; timeout)
         verbose && println("Initialized scenario with ", repr(scenario))
+        sc
     else
         res = HTTP.get(api_endpoint("scenario"), readtimeout = timeout)
-        scenario = JSON.parse(String(res.body))["payload"]
+        JSON.parse(String(res.body))["payload"]
     end
 
     forecast_points = DataFrame(_getpoints(api_endpoint("forecast_points")))
@@ -221,6 +214,72 @@ end
 
 ## Public API
 @deprecate initboptestservice!(boptest_url, testcase, dt; kwargs...) BOPTestPlant(boptest_url, testcase; dt, kwargs...)
+
+
+"""
+    initialize!(api_endpoint; init_vals, timeout)
+    initialize!(plant; init_vals, timeout)
+
+# Arguments
+- `api_endpoint::AbstractBOPTestEndpoint` **or**
+- `plant::AbstractBOPTestPlant`
+## Keyword arguments
+- `init_vals::AbstractDict`: Parameters for the initialization. Default is \
+`Dict("start_time" => 0, "warmup_period" => 0)`.
+- `timeout::Real`: Timeout for the BOPTEST-Service API, in seconds. Default is 30.
+
+(Re-)Initialize the plant and return the payload from the BOPTEST-Service API.
+"""
+function initialize!(
+    api_endpoint::AbstractBOPTestEndpoint;
+    init_vals::AbstractDict = Dict("start_time" => 0, "warmup_period" => 0),
+    timeout::Real = _DEF_TIMEOUT,
+)
+    res = HTTP.put(
+        api_endpoint("initialize"),
+        ["Content-Type" => "application/json"],
+        JSON.json(init_vals),
+        readtimeout = timeout,
+    )
+
+    payload_dict = JSON.parse(String(res.body))["payload"]
+    return payload_dict
+end
+
+initialize!(p::AbstractBOPTestPlant; kwargs...) = initialize!(p.api_endpoint; kwargs...)
+
+
+"""
+    setscenario!(api_endpoint, d; timeout)
+    setscenario!(plant, d; timeout)
+
+# Arguments
+- `api_endpoint::AbstractBOPTestEndpoint` **or**
+- `plant::AbstractBOPTestPlant`
+- `d::AbstractDict`: Parameters for scenario selection.
+## Keyword arguments
+- `timeout::Real`: Timeout for the BOPTEST-Service API, in seconds. Default is 30.
+
+Set the scenario for a BOPTEST plant and return the selected scenario.
+"""
+function setscenario!(
+    api_endpoint::AbstractBOPTestEndpoint,
+    d::AbstractDict;
+    timeout::Real = _DEF_TIMEOUT,
+)
+    res = HTTP.put(
+        api_endpoint("scenario"),
+        ["Content-Type" => "application/json"],
+        JSON.json(d),
+        readtimeout = timeout,
+    )
+
+    res = HTTP.get(api_endpoint("scenario"), readtimeout = timeout)
+    payload_dict = JSON.parse(String(res.body))["payload"]
+    return payload_dict
+end
+
+setscenario!(p::AbstractBOPTestPlant, d; kwargs...) = setscenario!(p.api_endpoint, d; kwargs...)
 
 
 """
