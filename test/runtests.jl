@@ -60,6 +60,12 @@ using Test
         # KPI
         kpi = getkpi(plant)
         @test "ener_tot" in keys(kpi)
+        @test kpi["ener_tot"] > 0
+
+        # Reset
+        initialize!(plant)
+        kpi = getkpi(plant)
+        @test kpi["ener_tot"] == 0
 
     catch e
         rethrow(e)

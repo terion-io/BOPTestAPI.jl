@@ -2,7 +2,7 @@ module BOPTestAPI
 
 export BOPTestPlant
 export controlinputs
-export initboptest!, advance!, stop!
+export initboptest!, initialize!, advance!, stop!
 export getforecasts, getmeasurements, getkpi
 
 using HTTP
@@ -165,14 +165,7 @@ function _initboptest!(
     verbose::Bool = false,
     timeout::Real = _DEF_TIMEOUT,
 )
-    # Initialize
-    res = HTTP.put(
-        api_endpoint("initialize"),
-        ["Content-Type" => "application/json"],
-        JSON.json(init_vals),
-        readtimeout = timeout,
-    )
-    res.status != 200 && error("Error initializing testcase")
+    initialize!(api_endpoint; init_vals, timeout)
 
     # Set simulation step
     if !isnothing(dt)
@@ -221,6 +214,39 @@ end
 
 ## Public API
 @deprecate initboptestservice!(boptest_url, testcase, dt; kwargs...) BOPTestPlant(boptest_url, testcase; dt, kwargs...)
+
+
+"""
+    initialize!(api_endpoint; init_vals, timeout)
+    initialize!(plant; init_vals, timeout)
+
+# Arguments
+- `api_endpoint::AbstractBOPTestEndpoint` **or**
+- `plant::AbstractBOPTestPlant`
+## Keyword arguments
+- `init_vals::AbstractDict`: Parameters for the initialization. Default is \
+`Dict("start_time" => 0, "warmup_period" => 0)`.
+- `timeout::Real`: Timeout for the BOPTEST-Service API, in seconds. Default is 30.
+
+(Re-)Initialize the plant and return the payload from the BOPTEST-Service API.
+"""
+function initialize!(
+    api_endpoint::AbstractBOPTestEndpoint;
+    init_vals::AbstractDict = Dict("start_time" => 0, "warmup_period" => 0),
+    timeout::Real = _DEF_TIMEOUT,
+)
+    res = HTTP.put(
+        api_endpoint("initialize"),
+        ["Content-Type" => "application/json"],
+        JSON.json(init_vals),
+        readtimeout = timeout,
+    )
+
+    payload_dict = JSON.parse(String(res.body))["payload"]
+    return payload_dict
+end
+
+initialize!(p::AbstractBOPTestPlant; kwargs...) = initialize!(p.api_endpoint; kwargs...)
 
 
 """
