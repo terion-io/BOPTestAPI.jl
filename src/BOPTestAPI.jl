@@ -125,6 +125,7 @@ function _getpoints(endpoint::AbstractString; timeout = _DEF_TIMEOUT)
     return yvars
 end
 
+
 function _initboptestservice!(
     boptest_url::AbstractString,
     testcase::AbstractString;
@@ -335,6 +336,18 @@ end
 
 
 """
+    getstep(plant::AbstractBOPTestPlant; timeout = _DEF_TIMEOUT)
+
+Get plant time step as `Float64`.
+"""
+function getstep(plant::AbstractBOPTestPlant; timeout::Real = _DEF_TIMEOUT)
+    res = HTTP.get(plant.api_endpoint("step"), readtimeout = timeout)
+    payload = JSON.parse(String(res.body))["payload"]
+    return Float64(payload)
+end
+
+
+"""
     getmeasurements(plant::AbstractBOPTestPlant, starttime, finaltime[, points])
 
 Query measurements from BOPTEST server and return as `DataFrame`.
@@ -359,21 +372,44 @@ function getmeasurements(
     convert_f64::Bool = true,
     kwargs...
 )
-    body = Dict(
-        "point_names" => points,
-        "start_time" => starttime,
-        "final_time" => finaltime,
-    )
-    data = _getdata(plant.api_endpoint("results"), body; kwargs...)
-    df = DataFrame(data)
+    BATCH_TARGET = 10_000 # Number of data points
+
+    # Plant will run at max 30 sec timestep
+    dt = min(getstep(plant), 30.0)
+    plant_timesteps = starttime:dt:finaltime
+
+    di = round(Int, BATCH_TARGET / length(points))
+    query_timesteps = collect(plant_timesteps[1:di:end])
+    if !(finaltime in query_timesteps)
+        query_timesteps = [query_timesteps; finaltime]
+    end
+    if length(query_timesteps) == 1
+        query_timesteps = [query_timesteps; query_timesteps]
+    end
+
+    # Type needed for dispatching on correct reduce(vcat, dfs) later
+    dfs::Vector{DataFrame} = []
+    for (ts, te) in zip(query_timesteps[1:end-1], query_timesteps[2:end])
+        body = Dict(
+            "point_names" => points,
+            "start_time" => ts,
+            "final_time" => te,
+        )
+        data = _getdata(plant.api_endpoint("results"), body; kwargs...)
+        push!(dfs, DataFrame(data))
+    end
+
+    all_data = reduce(vcat, dfs, cols = :intersect)
+    unique!(all_data, :time)
+
     if convert_f64
         try
-            mapcols!(c -> Float64.(c), df)
+            mapcols!(c -> Float64.(c), all_data)
         catch e
             @warn "Error converting to Float64: $(e)"
         end
     end
-    return df
+    return all_data
 end
 
 
