@@ -108,19 +108,19 @@ end
 
 
 function _getpoints(endpoint::AbstractString; timeout = _DEF_TIMEOUT)
-	yvars_res = HTTP.get(endpoint, readtimeout = timeout)
-	yvars_dict = JSON.parse(String(yvars_res.body))["payload"]
-	yvars = []
-	for (k, v_dict) in yvars_dict
+    yvars_res = HTTP.get(endpoint, readtimeout = timeout)
+    yvars_dict = JSON.parse(String(yvars_res.body))["payload"]
+    yvars = []
+    for (k, v_dict) in yvars_dict
         # Replace nothing with missing; not beautiful but explicit
         for (vk, vv) in v_dict
             if isnothing(vv)
                 v_dict[vk] = missing
             end
         end
-		_d = Dict("Name" => k, v_dict...)
+        _d = Dict("Name" => k, v_dict...)
         push!(yvars, _d)
-	end
+    end
 
     return yvars
 end
@@ -471,15 +471,15 @@ function advance!(
     u::AbstractDict;
     timeout::Real = _DEF_TIMEOUT,
 )
-	res = HTTP.post(
-		plant.api_endpoint("advance"),
-		["Content-Type" => "application/json"],
-		JSON.json(u);
+    res = HTTP.post(
+        plant.api_endpoint("advance"),
+        ["Content-Type" => "application/json"],
+        JSON.json(u);
         readtimeout = timeout,
-		retry_non_idempotent = true
-	)
-	
-	payload_dict = JSON.parse(String(res.body))["payload"]
+        retry_non_idempotent = true
+    )
+
+    payload_dict = JSON.parse(String(res.body))["payload"]
     return payload_dict
 end
 
