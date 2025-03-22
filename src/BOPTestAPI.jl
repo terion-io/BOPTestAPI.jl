@@ -91,6 +91,20 @@ function Base.show(io::IO, ::MIME"text/plain", plant::AbstractBOPTestPlant)
 end
 
 ## Private functions
+function _batch_timestamps(starttime::Real, finaltime::Real, dt::Real, n_points::Int; batch_target::Int = 10_000)
+    plant_timesteps = starttime:dt:finaltime
+
+    di = batch_target ÷ n_points
+    query_timesteps = collect(plant_timesteps[1:di:end])
+    if !(finaltime in query_timesteps)
+        query_timesteps = [query_timesteps; finaltime]
+    end
+    if length(query_timesteps) == 1
+        query_timesteps = [query_timesteps; query_timesteps]
+    end
+
+    return query_timesteps
+end
 
 function _getdata(endpoint::AbstractString, body; timeout = _DEF_TIMEOUT)
     put_hdr = ["Content-Type" => "application/json"]
@@ -104,7 +118,6 @@ function _getdata(endpoint::AbstractString, body; timeout = _DEF_TIMEOUT)
 
     return d
 end
-
 
 function _getpoints(endpoint::AbstractString; timeout = _DEF_TIMEOUT)
     yvars_res = HTTP.get(endpoint, readtimeout = timeout)
@@ -123,7 +136,6 @@ function _getpoints(endpoint::AbstractString; timeout = _DEF_TIMEOUT)
 
     return yvars
 end
-
 
 function _initboptestservice!(
     boptest_url::AbstractString,
@@ -368,20 +380,10 @@ function getmeasurements(
     convert_f64::Bool = true,
     kwargs...
 )
-    BATCH_TARGET = 10_000 # Number of data points
 
     # Plant will run at max 30 sec timestep
     dt = min(getstep(plant), 30.0)
-    plant_timesteps = starttime:dt:finaltime
-
-    di = round(Int, BATCH_TARGET / length(points))
-    query_timesteps = collect(plant_timesteps[1:di:end])
-    if !(finaltime in query_timesteps)
-        query_timesteps = [query_timesteps; finaltime]
-    end
-    if length(query_timesteps) == 1
-        query_timesteps = [query_timesteps; query_timesteps]
-    end
+    query_timesteps = _batch_timestamps(starttime, finaltime, dt, length(points))
 
     # Type needed for dispatching on correct reduce(vcat, dfs) later
     dfs::Vector{DataFrame} = []
