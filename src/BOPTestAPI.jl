@@ -1,6 +1,6 @@
 module BOPTestAPI
 
-export BOPTestPlant
+export BOPTestPlant, CachedBOPTestPlant
 export controlinputs
 export initboptest!, initialize!, advance!, setscenario!, stop!
 export getforecasts, getmeasurements, getkpi
@@ -76,6 +76,73 @@ function BOPTestPlant(
 end
 
 
+Base.@kwdef mutable struct CachedBOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
+    meta::BOPTestPlant{EP}
+
+    dt::Float64 # Step size
+    t::Float64  # Current time
+    N::Int      # Forecast horizon
+
+    forecasts::AbstractDataFrame
+    inputs::AbstractDataFrame
+    measurements::AbstractDataFrame
+end
+
+function CachedBOPTestPlant(
+    boptest_url::AbstractString,
+    testcase::AbstractString,
+    N::Int;
+    kwargs...
+)
+    meta = _initboptestservice!(boptest_url, testcase; kwargs...)
+    t = 0.0
+
+    dt = Float64(get(kwargs, :dt, getstep(meta)))
+
+    mcols = [meta.measurement_points.Name; meta.input_points.Name; "time"]
+    measurements = DataFrame([name => Float64[] for name in mcols])
+    
+    override_sigs = subset(
+        meta.input_points,
+        :Name => s -> endswith.(s, "_activate")
+    )
+    u_sigs = subset(meta.input_points, :Name => s -> endswith.(s, "_u"))
+    int_input_cols = [name => Union{Int, Missing}[] for name in sort(override_sigs.Name)]
+    float_input_cols = [name => Union{Float64, Missing}[] for name in sort(u_sigs.Name)]
+
+    length(int_input_cols) == length(float_input_cols) || error(
+        "Number of '_activate' and '_u' inputs does not match"
+    )
+    
+    inputs = DataFrame()
+    for (act_col, val_col) in zip(int_input_cols, float_input_cols)
+        insertcols!(inputs, act_col, val_col)
+    end
+
+    forecasts = getforecasts(meta, N * dt, dt)
+
+    return CachedBOPTestPlant(;
+        meta,
+        dt,
+        t,
+        N,
+        forecasts,
+        inputs,
+        measurements,
+    )
+end
+
+function Base.getproperty(p::CachedBOPTestPlant, s::Symbol)
+    if s in fieldnames(BOPTestPlant)
+        return getfield(p.meta, s)
+    end
+    return getfield(p, s)
+end
+
+function Base.propertynames(::CachedBOPTestPlant)
+    return (fieldnames(BOPTestPlant)..., :dt, :t, :N, :forecasts, :inputs, :measurements)
+end
+
 function Base.show(io::IO, plant::T) where {T <: AbstractBOPTestPlant}
     print(io, "$T(", plant.api_endpoint.base_url, ")")
 end
@@ -104,6 +171,16 @@ function _batch_timestamps(starttime::Real, finaltime::Real, dt::Real, n_points:
     end
 
     return query_timesteps
+end
+
+function _complete_inputs(u::AbstractDict, cols)
+    u = Dict{String, Union{Int, Float64, Missing}}(u...)
+    for c in cols
+        if !haskey(u, c)
+            u[c] = missing
+        end
+    end
+    return u
 end
 
 function _getdata(endpoint::AbstractString, body; timeout = _DEF_TIMEOUT)
@@ -465,7 +542,7 @@ Step the plant using control input u.
 Returns the payload as `Dict{String, Vector}`.
 """
 function advance!(
-    plant::AbstractBOPTestPlant,
+    plant::BOPTestPlant,
     u::AbstractDict;
     timeout::Real = _DEF_TIMEOUT,
 )
@@ -479,6 +556,23 @@ function advance!(
 
     payload_dict = JSON.parse(String(res.body))["payload"]
     return payload_dict
+end
+
+function advance!(
+    plant::CachedBOPTestPlant,
+    u::AbstractDict;
+    timeout::Real = _DEF_TIMEOUT,
+)
+    payload = advance!(plant.meta, u; timeout)
+
+    plant.t += plant.dt
+
+    plant.forecasts = getforecasts(plant, plant.N * plant.dt, plant.dt)
+    append!(plant.measurements, payload)
+    all_inputs = _complete_inputs(u, plant.input_points.Name)
+    append!(plant.inputs, all_inputs)
+    
+    return payload
 end
 
 
@@ -511,6 +605,8 @@ function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint}; kwargs...)
     _stop!(plant.api_endpoint("stop"), plant.api_endpoint.testid; kwargs...)
     return nothing
 end
+
+stop!(p::CachedBOPTestPlant; kwargs...) = stop!(p.meta; kwargs...)
 
 function stop!(base_url::AbstractString, testid::AbstractString; kwargs...)
     _stop!("$(base_url)/stop/$(testid)", testid; kwargs...)
