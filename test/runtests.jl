@@ -4,7 +4,7 @@ using BOPTestAPI
 using DataFrames
 using Test
 
-@testset "BOPTestAPI.jl" begin
+@testset "BOPTestPlant" begin
     testcase = "bestest_hydronic"
     dt = 300.0
     scenario = Dict(
@@ -76,3 +76,58 @@ using Test
         stop!(plant)
     end
 end
+
+
+@testset "CachedBOPTestPlant" begin
+    testcase = "bestest_hydronic_heat_pump"
+    dt = 300.0
+    scenario = Dict(
+        "electricity_price" => "highly_dynamic",
+    # Note: This seems to not work on the server side
+    #    "time_period" => "typical_heat_day" 
+    )
+    N = 12
+
+    # To use BOPTEST-service
+    # base_url = "http://localhost"
+    base_url = "http://api.boptest.net"
+    plant = CachedBOPTestPlant(
+        base_url, testcase, N;
+        dt, scenario
+    )
+    try
+        @test plant isa AbstractBOPTestPlant
+
+        # Added fields
+        @test plant.dt == dt
+        @test plant.N == N
+        @test plant.t == 0.0
+
+        # To check Base.getproperty accessor
+        @test plant.input_points isa AbstractDataFrame
+
+        @test size(plant.forecasts, 1) == N + 1
+        
+        u = Dict("oveHeaPumY_activate" => 1, "oveHeaPumY_u" => 0.3)
+        N_advance = 10
+        for t = 1:N_advance
+            advance!(plant, u)
+        end
+
+        @test plant.t == N_advance * dt
+        
+        @test size(plant.inputs, 1) == N_advance
+        @test all(ismissing.(plant.inputs[!, :oveTSet_u]))
+        @test all(plant.inputs[!, :oveHeaPumY_u] .== 0.3)
+
+        @test size(plant.measurements, 1) == N_advance
+        @test all(diff(plant.measurements.time) .== dt)
+
+        @test minimum(plant.forecasts.time) == plant.t
+    catch e
+        rethrow(e)
+    finally
+        stop!(plant)
+    end
+end
+
