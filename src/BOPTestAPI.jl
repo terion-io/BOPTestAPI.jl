@@ -482,9 +482,12 @@ function advance!(
 end
 
 
-function _stop!(url::AbstractString; timeout::Real = _DEF_TIMEOUT)
-    res = try
-        HTTP.put(url, readtimeout = timeout)
+function _stop!(url::AbstractString, log_testid::AbstractString; timeout::Real = _DEF_TIMEOUT)
+    try
+        r = HTTP.put(url, readtimeout = timeout)
+        if r.status == 200
+            @info "Successfully stopped testid $log_testid"
+        end
     catch e
         if e isa HTTP.Exceptions.StatusError
             payload = JSON.parse(String(e.response.body))
@@ -493,7 +496,6 @@ function _stop!(url::AbstractString; timeout::Real = _DEF_TIMEOUT)
             rethrow(e)
         end
     end
-    return res
 end
 
 """
@@ -506,26 +508,19 @@ This method does nothing for plants run in normal BOPTEST
 (i.e. not BOPTEST-Service).
 """
 function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint}; kwargs...)
-    res = _stop!(plant.api_endpoint("stop"); kwargs...)
-    if res.status == 200
-        @info "Successfully stopped testid $(plant.api_endpoint.testid)"
-    end
+    _stop!(plant.api_endpoint("stop"), plant.api_endpoint.testid; kwargs...)
     return nothing
 end
 
 function stop!(base_url::AbstractString, testid::AbstractString; kwargs...)
-    url = "$(base_url)/stop/$(testid)"
-    res = _stop!(url; kwargs...)
-    if res.status == 200
-        @info "Successfully stopped testid $(plant.api_endpoint.testid)"
-    end
+    _stop!("$(base_url)/stop/$(testid)", testid; kwargs...)
     return nothing
 end
 
 stop!(testid::AbstractString; kwargs...) = stop!("http://localhost", testid; kwargs...)
 
 # Hopefully avoids user confusion
-function stop!(::BOPTestPlant{BOPTestEndpoint})
+function stop!(::BOPTestPlant{BOPTestEndpoint}; kwargs...)
     @warn "Only plants in BOPTEST-Service can be stopped"
     return nothing
 end
