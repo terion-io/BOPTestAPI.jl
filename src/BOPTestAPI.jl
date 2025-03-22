@@ -44,7 +44,7 @@ end
 abstract type AbstractBOPTestPlant end
 
 """
-    BOPTestPlant(boptest_url, testcase[; dt, init_vals, scenario, verbose])
+    BOPTestPlant(boptest_url, testcase[; dt, init_vals, scenario])
 
 Initialize a testcase in BOPTEST service with step size dt.
 
@@ -55,7 +55,6 @@ Initialize a testcase in BOPTEST service with step size dt.
 - `dt::Real`: Time step in seconds.
 - `init_vals::AbstractDict`: Parameters for the initialization.
 - `scenario::AbstractDict` : Parameters for scenario selection.
-- `verbose::Bool`: Print something to stdout.
 
 """
 Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
@@ -83,7 +82,7 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", plant::AbstractBOPTestPlant)
     show(io, plant)
-    println()
+    println(io)
     if plant.api_endpoint isa BOPTestServiceEndpoint
         println(io, "Test-ID: ", plant.api_endpoint.testid)
     end
@@ -169,7 +168,6 @@ function _initboptest!(
     dt::Union{Nothing, Real} = nothing,
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
     scenario::Union{Nothing, AbstractDict} = nothing,
-    verbose::Bool = false,
     timeout::Real = _DEF_TIMEOUT,
 )
     initialize!(api_endpoint; init_vals, timeout)
@@ -187,12 +185,12 @@ function _initboptest!(
 
     res = HTTP.get(api_endpoint("name"), readtimeout = timeout)
     testcase = JSON.parse(String(res.body))["payload"]["name"]
-    verbose && println("Initialized testcase = '$testcase'")
+    @info "Initialized testcase = '$testcase'"
     
     # Set scenario (electricity prices, ...)
     scenario = if !isnothing(scenario)
         sc = setscenario!(api_endpoint, scenario; timeout)
-        verbose && println("Initialized scenario with ", repr(scenario))
+        @info "Initialized scenario with " scenario
         sc
     else
         res = HTTP.get(api_endpoint("scenario"), readtimeout = timeout)
@@ -284,7 +282,7 @@ setscenario!(p::AbstractBOPTestPlant, d; kwargs...) = setscenario!(p.api_endpoin
 
 
 """
-    initboptest!(boptest_url[; dt, init_vals, scenario, verbose])
+    initboptest!(boptest_url[; dt, init_vals, scenario])
 
 [**Warning:** Deprecated.] Initialize the local BOPTEST server.
 
@@ -294,7 +292,6 @@ setscenario!(p::AbstractBOPTestPlant, d; kwargs...) = setscenario!(p.api_endpoin
 - `dt::Real`: Time step in seconds.
 - `init_vals::AbstractDict`: Parameters for the initialization.
 - `scenario::AbstractDict` : Parameters for scenario selection.
-- `verbose::Bool`: Print something to stdout.
 
 Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
 
@@ -307,7 +304,6 @@ function initboptest!(
     dt::Union{Nothing, Real} = nothing,
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
     scenario::Union{Nothing, AbstractDict} = nothing,
-    verbose::Bool = false,
     timeout::Real = _DEF_TIMEOUT,
 )
     Base.depwarn(
@@ -484,33 +480,52 @@ function advance!(
 end
 
 
+function _stop!(url::AbstractString; timeout::Real = _DEF_TIMEOUT)
+    res = try
+        HTTP.put(url, readtimeout = timeout)
+    catch e
+        if e isa HTTP.Exceptions.StatusError
+            payload = JSON.parse(String(e.response.body))
+            @warn "Problem stopping plant:" payload["errors"][1]["msg"]
+        else
+            rethrow(e)
+        end
+    end
+    return res
+end
+
 """
     stop!(plant::AbstractBOPTestPlant)
+    stop!([base_url = "http://localhost",] testid::AbstractString)
 
 Stop a `BOPTestPlant` from running.
 
 This method does nothing for plants run in normal BOPTEST 
 (i.e. not BOPTEST-Service).
 """
-function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint}; timeout::Real = _DEF_TIMEOUT)
-    try
-        res = HTTP.put(plant.api_endpoint("stop"), readtimeout = timeout)
-        res.status == 200 && println(
-            "Successfully stopped testid ", plant.api_endpoint.testid
-        )
-    catch e
-        if e isa HTTP.Exceptions.StatusError
-            payload = JSON.parse(String(e.response.body))
-            println(payload["errors"][1]["msg"])
-        else
-            rethrow(e)
-        end
+function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint}; kwargs...)
+    res = _stop!(plant.api_endpoint("stop"); kwargs...)
+    if res.status == 200
+        @info "Successfully stopped testid $(plant.api_endpoint.testid)"
     end
+    return nothing
 end
+
+function stop!(base_url::AbstractString, testid::AbstractString; kwargs...)
+    url = "$(base_url)/stop/$(testid)"
+    res = _stop!(url; kwargs...)
+    if res.status == 200
+        @info "Successfully stopped testid $(plant.api_endpoint.testid)"
+    end
+    return nothing
+end
+
+stop!(testid::AbstractString; kwargs...) = stop!("http://localhost", testid; kwargs...)
 
 # Hopefully avoids user confusion
 function stop!(::BOPTestPlant{BOPTestEndpoint})
-    println("Only plants in BOPTEST-Service can be stopped")
+    @warn "Only plants in BOPTEST-Service can be stopped"
+    return nothing
 end
 
 
