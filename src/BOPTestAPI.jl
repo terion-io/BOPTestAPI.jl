@@ -46,11 +46,12 @@ abstract type AbstractBOPTestPlant end
 """
     BOPTestPlant(boptest_url, testcase[; dt, init_vals, scenario])
 
-Initialize a testcase in BOPTEST service with step size dt.
+Initialize a testcase in BOPTEST service.
 
 # Arguments
-- `boptest_url`: URL of the BOPTEST-Service API to initialize.
-- `testcase` : Name of the test case, [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
+- `boptest_url::AbstractString`: URL of the BOPTEST-Service API to initialize.
+- `testcase::AbstractString` : Name of the test case, \
+[list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
 ## Keyword arguments
 - `dt::Real`: Time step in seconds.
 - `init_vals::AbstractDict`: Parameters for the initialization.
@@ -76,6 +77,32 @@ function BOPTestPlant(
 end
 
 
+"""
+    CachedBOPTestPlant(boptest_url, testcase, N[; dt, init_vals, scenario])
+
+[**Warning: Experimental**] Initialize a testcase in BOPTEST service, with a local cache.
+
+In addition to the properties and methods of the normal `BOPTestPlant`, this type also
+stores submitted inputs, received measurements, and the current forecast. These values
+are updated when calling `advance!`.
+
+# Arguments
+- `boptest_url::AbstractString`: URL of the BOPTEST-Service API to initialize.
+- `testcase::AbstractString`: Name of the test case, \
+[list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
+- `N::Int`: Forecast cache size
+## Keyword arguments
+See the documentation for `BOPTestPlant`.
+
+# Additional Fields
+- `dt::Float64`: Step size
+- `t::Float64`: Current time of the plant
+- `forecasts::DataFrame`: Forecast from current timestep
+- `inputs::DataFrame`: Inputs as submitted. Uses `missing` if no value was given for an \
+input.
+- `measurements::DataFrame`: Measurements as returned from `advance!`. Also contains the \
+actual actuator inputs, which can differ from the submitted ones.
+"""
 Base.@kwdef mutable struct CachedBOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
     meta::BOPTestPlant{EP}
 
@@ -155,10 +182,15 @@ function Base.show(io::IO, ::MIME"text/plain", plant::AbstractBOPTestPlant)
     end
     println(io, "Testcase: ", plant.testcase)
     println(io, "Scenario: ", plant.scenario)
+    if plant isa CachedBOPTestPlant
+        println(io, "Cached forecast horizon: ", plant.N)
+    end
 end
 
 ## Private functions
-function _batch_timestamps(starttime::Real, finaltime::Real, dt::Real, n_points::Int; batch_target::Int = 10_000)
+function _batch_timestamps(
+    starttime::Real, finaltime::Real, dt::Real, n_points::Int; batch_target::Int = 10_000
+)
     plant_timesteps = starttime:dt:finaltime
 
     di = batch_target ÷ n_points
@@ -305,12 +337,10 @@ end
 
 
 """
-    initialize!(api_endpoint; init_vals, timeout)
-    initialize!(plant; init_vals, timeout)
+    initialize!(api_endpoint::AbstractBOPTestEndpoint; init_vals, timeout)
+    initialize!(plant::AbstractBOPTestPlant; init_vals, timeout)
 
 # Arguments
-- `api_endpoint::AbstractBOPTestEndpoint` **or**
-- `plant::AbstractBOPTestPlant`
 ## Keyword arguments
 - `init_vals::AbstractDict`: Parameters for the initialization. Default is \
 `Dict("start_time" => 0, "warmup_period" => 0)`.
@@ -338,12 +368,10 @@ initialize!(p::AbstractBOPTestPlant; kwargs...) = initialize!(p.api_endpoint; kw
 
 
 """
-    setscenario!(api_endpoint, d; timeout)
-    setscenario!(plant, d; timeout)
+    setscenario!(api_endpoint::AbstractBOPTestEndpoint, d; timeout)
+    setscenario!(plant::AbstractBOPTestPlant, d; timeout)
 
 # Arguments
-- `api_endpoint::AbstractBOPTestEndpoint` **or**
-- `plant::AbstractBOPTestPlant`
 - `d::AbstractDict`: Parameters for scenario selection.
 ## Keyword arguments
 - `timeout::Real`: Timeout for the BOPTEST-Service API, in seconds. Default is 30.
@@ -376,7 +404,7 @@ setscenario!(p::AbstractBOPTestPlant, d; kwargs...) = setscenario!(p.api_endpoin
 [**Warning:** Deprecated.] Initialize the local BOPTEST server.
 
 # Arguments
-- `boptest_url`: URL of the BOPTEST server to initialize.
+- `boptest_url::AbstractString`: URL of the BOPTEST server to initialize.
 ## Keyword arguments
 - `dt::Real`: Time step in seconds.
 - `init_vals::AbstractDict`: Parameters for the initialization.
@@ -433,12 +461,12 @@ end
 
 
 """
-    getmeasurements(plant::AbstractBOPTestPlant, starttime, finaltime[, points])
+    getmeasurements(plant, starttime, finaltime[, points])
 
 Query measurements from BOPTEST server and return as `DataFrame`.
 
 # Arguments
-- `plant` : The plant to query measurements from.
+- `plant::AbstractBOPTestPlant` : The plant to query measurements from.
 - `starttime::Real` : Start time for measurements time series, in seconds.
 - `finaltime::Real` : Final time for measurements time series, in seconds.
 - `points::AbstractVector{AbstractString}` : The measurement point names to query. Optional.
@@ -457,7 +485,6 @@ function getmeasurements(
     convert_f64::Bool = true,
     kwargs...
 )
-
     # Plant will run at max 30 sec timestep
     dt = min(getstep(plant), 30.0)
     query_timesteps = _batch_timestamps(starttime, finaltime, dt, length(points))
@@ -489,12 +516,12 @@ end
 
 
 """
-    getforecasts(plant::AbstractBOPTestPlant, horizon, interval[, points])
+    getforecasts(plant, horizon, interval[, points])
 
 Query forecast from BOPTEST server and return as `DataFrame`.
 
 # Arguments
-- `plant` : The plant to query forecast from.
+- `plant::AbstractBOPTestPlant` : The plant to query forecast from.
 - `horizon::Real` : Forecast time horizon from current time step, in seconds.
 - `interval::Real` : Time step size for the forecast data, in seconds.
 - `points::AbstractVector{AbstractString}` : The forecast point names to query. Optional.
@@ -534,10 +561,6 @@ end
     advance!(plant::AbstractBOPTestPlant, u::AbstractDict)
 
 Step the plant using control input u.
-
-# Arguments
-- `plant::AbstractBOPTestPlant`: Plant to advance.
-- `u::AbstractDict`: Control inputs for the active test case.
 
 Returns the payload as `Dict{String, Vector}`.
 """
@@ -585,7 +608,8 @@ function _stop!(url::AbstractString, log_testid::AbstractString; timeout::Real =
     catch e
         if e isa HTTP.Exceptions.StatusError
             payload = JSON.parse(String(e.response.body))
-            @warn "Problem stopping plant:" payload["errors"][1]["msg"]
+            msg = payload["errors"][1]["msg"]
+            @warn "StatusError when stopping plant" msg
         else
             rethrow(e)
         end

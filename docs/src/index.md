@@ -140,13 +140,14 @@ stop!(plant)
 ## API
 ```@docs
 BOPTestPlant
+CachedBOPTestPlant
 initialize!
 initboptest!
 setscenario!
 getforecasts
 getmeasurements
 getkpi
-controlinputs
 advance!
 stop!
+controlinputs
 ```
