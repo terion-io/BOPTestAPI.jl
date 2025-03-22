@@ -18,7 +18,7 @@ using Test
     base_url = "http://api.boptest.net"
     plant = BOPTestPlant(
         base_url, testcase;
-        dt, scenario, verbose = true
+        dt, scenario
     )
     
     try
