@@ -347,6 +347,7 @@ end
 - `timeout::Real`: Timeout for the BOPTEST-Service API, in seconds. Default is 30.
 
 (Re-)Initialize the plant and return the payload from the BOPTEST-Service API.
+Also empties the caches for a `CachedBOPTestPlant` by removing all rows.
 """
 function initialize!(
     api_endpoint::AbstractBOPTestEndpoint;
@@ -364,8 +365,15 @@ function initialize!(
     return payload_dict
 end
 
-initialize!(p::AbstractBOPTestPlant; kwargs...) = initialize!(p.api_endpoint; kwargs...)
+initialize!(p::BOPTestPlant; kwargs...) = initialize!(p.api_endpoint; kwargs...)
 
+function initialize!(plant::CachedBOPTestPlant; kwargs...)
+    deleteat!(plant.forecasts, 1:size(plant.forecasts, 1))
+    deleteat!(plant.inputs, 1:size(plant.inputs, 1))
+    deleteat!(plant.measurements, 1:size(plant.measurements, 1))
+
+    return initialize!(plant.meta)
+end
 
 """
     setscenario!(api_endpoint::AbstractBOPTestEndpoint, d; timeout)
