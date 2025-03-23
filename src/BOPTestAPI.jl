@@ -96,7 +96,6 @@ See the documentation for `BOPTestPlant`.
 
 # Additional Fields
 - `dt::Float64`: Step size
-- `t::Float64`: Current time of the plant
 - `forecasts::DataFrame`: Forecast from current timestep
 - `inputs::DataFrame`: Inputs as submitted. Uses `missing` if no value was given for an \
 input.
@@ -107,7 +106,6 @@ Base.@kwdef mutable struct CachedBOPTestPlant{EP <: AbstractBOPTestEndpoint} <: 
     meta::BOPTestPlant{EP}
 
     dt::Float64 # Step size
-    t::Float64  # Current time
     N::Int      # Forecast horizon
 
     forecasts::AbstractDataFrame
@@ -122,36 +120,16 @@ function CachedBOPTestPlant(
     kwargs...
 )
     meta = _initboptestservice!(boptest_url, testcase; kwargs...)
-    t = 0.0
 
     dt = Float64(get(kwargs, :dt, getstep(meta)))
 
-    mcols = [meta.measurement_points.Name; meta.input_points.Name; "time"]
-    measurements = DataFrame([name => Float64[] for name in mcols])
-    
-    override_sigs = subset(
-        meta.input_points,
-        :Name => s -> endswith.(s, "_activate")
-    )
-    u_sigs = subset(meta.input_points, :Name => s -> endswith.(s, "_u"))
-    int_input_cols = [name => Union{Int, Missing}[] for name in sort(override_sigs.Name)]
-    float_input_cols = [name => Union{Float64, Missing}[] for name in sort(u_sigs.Name)]
-
-    length(int_input_cols) == length(float_input_cols) || error(
-        "Number of '_activate' and '_u' inputs does not match"
-    )
-    
-    inputs = DataFrame()
-    for (act_col, val_col) in zip(int_input_cols, float_input_cols)
-        insertcols!(inputs, act_col, val_col)
-    end
-
     forecasts = getforecasts(meta, N * dt, dt)
+    inputs = _create_input_df(meta)
+    measurements = _create_measurement_df(meta)
 
     return CachedBOPTestPlant(;
         meta,
         dt,
-        t,
         N,
         forecasts,
         inputs,
@@ -167,7 +145,7 @@ function Base.getproperty(p::CachedBOPTestPlant, s::Symbol)
 end
 
 function Base.propertynames(::CachedBOPTestPlant)
-    return (fieldnames(BOPTestPlant)..., :dt, :t, :N, :forecasts, :inputs, :measurements)
+    return (fieldnames(BOPTestPlant)..., :dt, :N, :forecasts, :inputs, :measurements)
 end
 
 function Base.show(io::IO, plant::T) where {T <: AbstractBOPTestPlant}
@@ -213,6 +191,32 @@ function _complete_inputs(u::AbstractDict, cols)
         end
     end
     return u
+end
+
+function _create_measurement_df(plant::AbstractBOPTestPlant)
+    mcols = [plant.measurement_points.Name; plant.input_points.Name; "time"]
+    return DataFrame([name => Float64[] for name in mcols])
+end
+
+function _create_input_df(plant::AbstractBOPTestPlant)
+    override_sigs = subset(
+        plant.input_points,
+        :Name => s -> endswith.(s, "_activate")
+    )
+    u_sigs = subset(plant.input_points, :Name => s -> endswith.(s, "_u"))
+    int_input_cols = [name => Union{Int, Missing}[] for name in sort(override_sigs.Name)]
+    float_input_cols = [name => Union{Float64, Missing}[] for name in sort(u_sigs.Name)]
+
+    length(int_input_cols) == length(float_input_cols) || error(
+        "Number of '_activate' and '_u' inputs does not match"
+    )
+    
+    inputs = DataFrame()
+    for (act_col, val_col) in zip(int_input_cols, float_input_cols)
+        insertcols!(inputs, act_col, val_col)
+    end
+
+    return inputs
 end
 
 function _getdata(endpoint::AbstractString, body; timeout = _DEF_TIMEOUT)
@@ -347,7 +351,7 @@ end
 - `timeout::Real`: Timeout for the BOPTEST-Service API, in seconds. Default is 30.
 
 (Re-)Initialize the plant and return the payload from the BOPTEST-Service API.
-Also empties the caches for a `CachedBOPTestPlant` by removing all rows.
+Also re-initializes the caches for a `CachedBOPTestPlant`.
 """
 function initialize!(
     api_endpoint::AbstractBOPTestEndpoint;
@@ -368,11 +372,12 @@ end
 initialize!(p::BOPTestPlant; kwargs...) = initialize!(p.api_endpoint; kwargs...)
 
 function initialize!(plant::CachedBOPTestPlant; kwargs...)
-    deleteat!(plant.forecasts, 1:size(plant.forecasts, 1))
-    deleteat!(plant.inputs, 1:size(plant.inputs, 1))
-    deleteat!(plant.measurements, 1:size(plant.measurements, 1))
+    res = initialize!(plant.meta)
 
-    return initialize!(plant.meta)
+    plant.forecasts = getforecasts(plant.meta, plant.N * plant.dt, plant.dt)
+    plant.measurements = _create_measurement_df(plant.meta)
+    plant.inputs = _create_input_df(plant.meta)
+    return res
 end
 
 """
@@ -596,12 +601,13 @@ function advance!(
 )
     payload = advance!(plant.meta, u; timeout)
 
-    plant.t += plant.dt
+    fc = getforecasts(plant, plant.N * plant.dt, plant.dt)
+    deleteat!(plant.forecasts, 1)
+    push!(plant.forecasts, fc[end, :])
 
-    plant.forecasts = getforecasts(plant, plant.N * plant.dt, plant.dt)
-    append!(plant.measurements, payload)
+    push!(plant.measurements, payload)
     all_inputs = _complete_inputs(u, plant.input_points.Name)
-    append!(plant.inputs, all_inputs)
+    push!(plant.inputs, all_inputs)
     
     return payload
 end

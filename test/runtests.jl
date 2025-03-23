@@ -101,7 +101,6 @@ end
         # Added fields
         @test plant.dt == dt
         @test plant.N == N
-        @test plant.t == 0.0
 
         # To check Base.getproperty accessor
         @test plant.input_points isa AbstractDataFrame
@@ -114,8 +113,6 @@ end
             advance!(plant, u)
         end
 
-        @test plant.t == N_advance * dt
-        
         @test size(plant.inputs, 1) == N_advance
         @test all(ismissing.(plant.inputs[!, :oveTSet_u]))
         @test all(plant.inputs[!, :oveHeaPumY_u] .== 0.3)
@@ -123,7 +120,13 @@ end
         @test size(plant.measurements, 1) == N_advance
         @test all(diff(plant.measurements.time) .== dt)
 
-        @test minimum(plant.forecasts.time) == plant.t
+        @test minimum(plant.forecasts.time) == N_advance * dt
+
+        initialize!(plant)
+        @test size(plant.measurements, 1) == 0
+        @test size(plant.inputs, 1) == 0
+        @test minimum(plant.forecasts.time) == 0.0
+        
     catch e
         rethrow(e)
     finally
