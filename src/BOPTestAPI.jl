@@ -172,7 +172,7 @@ function _batch_timestamps(
     plant_timesteps = starttime:dt:finaltime
 
     di = batch_target ÷ n_points
-    query_timesteps = collect(plant_timesteps[1:di:end])
+    query_timesteps = plant_timesteps[1:di:end]
     if !(finaltime in query_timesteps)
         query_timesteps = [query_timesteps; finaltime]
     end
@@ -502,6 +502,11 @@ function getmeasurements(
     dt = min(getstep(plant), 30.0)
     query_timesteps = _batch_timestamps(starttime, finaltime, dt, length(points))
 
+    n_batches = length(query_timesteps)
+    if n_batches > 100
+        @info "Fetching $n_batches batches of measurement data"
+    end
+    
     # Type needed for dispatching on correct reduce(vcat, dfs) later
     dfs::Vector{DataFrame} = []
     for (ts, te) in zip(query_timesteps[1:end-1], query_timesteps[2:end])
