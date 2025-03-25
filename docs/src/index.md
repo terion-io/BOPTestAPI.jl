@@ -138,16 +138,33 @@ stop!(plant)
 ```
 
 ## API
+### Types
 ```@docs
 BOPTestPlant
 CachedBOPTestPlant
+```
+### Accessors
+```@docs
+forecast_points
+input_points
+measurement_points
+forecasts
+past_inputs
+measurements
+```
+### Interaction
+```@docs
 initialize!
 initboptest!
 setscenario!
 getforecasts
 getmeasurements
 getkpi
+getstep
 advance!
 stop!
+```
+### Utils
+```@docs
 controlinputs
 ```

@@ -1,9 +1,11 @@
 module BOPTestAPI
 
 export BOPTestPlant, CachedBOPTestPlant
+export forecast_points, input_points, measurement_points
+export forecasts, past_inputs, measurements
 export controlinputs
 export initboptest!, initialize!, advance!, setscenario!, stop!
-export getforecasts, getmeasurements, getkpi
+export getforecasts, getmeasurements, getkpi, getstep
 
 using HTTP
 using JSON
@@ -93,14 +95,6 @@ are updated when calling `advance!`.
 - `N::Int`: Forecast cache size
 ## Keyword arguments
 See the documentation for `BOPTestPlant`.
-
-# Additional Fields
-- `dt::Float64`: Step size
-- `forecasts::DataFrame`: Forecast from current timestep
-- `inputs::DataFrame`: Inputs as submitted. Uses `missing` if no value was given for an \
-input.
-- `measurements::DataFrame`: Measurements as returned from `advance!`. Also contains the \
-actual actuator inputs, which can differ from the submitted ones.
 """
 Base.@kwdef mutable struct CachedBOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
     meta::BOPTestPlant{EP}
@@ -338,6 +332,57 @@ end
 
 ## Public API
 @deprecate initboptestservice!(boptest_url, testcase, dt; kwargs...) BOPTestPlant(boptest_url, testcase; dt, kwargs...)
+
+
+## Accessor methods
+"""
+    forecast_points(p::AbstractBOPTestPlant)
+
+Return forecast points as `DataFrame`.
+"""
+forecast_points(p::AbstractBOPTestPlant) = p.forecast_points
+
+"""
+    input_points(p::AbstractBOPTestPlant)
+
+Return forecast points as `DataFrame`.
+"""
+input_points(p::AbstractBOPTestPlant) = p.input_points
+
+"""
+    measurement_points(p::AbstractBOPTestPlant)
+
+Return measurement points as `DataFrame`.
+"""
+measurement_points(p::AbstractBOPTestPlant) = p.measurement_points
+
+
+"""
+    forecasts(p::CachedBOPTestPlant)
+
+Return forecasts from current time step as `DataFrame`.
+"""
+forecasts(p::CachedBOPTestPlant) = p.forecasts
+
+"""
+    past_inputs(p::CachedBOPTestPlant)
+
+Return past inputs to plant as `DataFrame`.
+
+In case the default was used for a signal, the entry will be `missing`.
+"""
+past_inputs(p::CachedBOPTestPlant) = p.inputs
+
+"""
+    measurements(p::CachedBOPTestPlant)
+
+Return measurements as `DataFrame`.
+
+Unlike `getmeasurements(p, ...)`, this method uses the local cache. This means
+that (1) the time step corresponds to the controller time step, and (2) also actually
+realized control inputs are available.
+"""
+measurements(p::CachedBOPTestPlant) = p.measurements
 
 
 """
