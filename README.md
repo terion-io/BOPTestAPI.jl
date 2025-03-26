@@ -43,9 +43,9 @@ local_plant = initboptest!("http://127.0.0.1:5000")
 
 The initialization functions also query and store the available signals (as `DataFrame`),
 since they are constant for a testcase. The signals are available as
-* `plant.forecast_points`
-* `plant.input_points`
-* `plant.measurement_points`
+* `forecast_points(plant)`
+* `input_points(plant)`
+* `measurement_points(plant)`
 
 ### Interaction with the plant
 The package then defines common functions to operate on the plant, namely

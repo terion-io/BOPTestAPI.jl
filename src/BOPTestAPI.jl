@@ -2,7 +2,7 @@ module BOPTestAPI
 
 export BOPTestPlant, CachedBOPTestPlant
 export forecast_points, input_points, measurement_points
-export forecasts, past_inputs, measurements
+export forecasts, inputs_sent, measurements
 export controlinputs
 export initboptest!, initialize!, advance!, setscenario!, stop!
 export getforecasts, getmeasurements, getkpi, getstep
@@ -205,7 +205,7 @@ function _create_input_df(plant::AbstractBOPTestPlant)
         "Number of '_activate' and '_u' inputs does not match"
     )
     
-    inputs = DataFrame()
+    inputs = DataFrame(:time => Float64[])
     for (act_col, val_col) in zip(int_input_cols, float_input_cols)
         insertcols!(inputs, act_col, val_col)
     end
@@ -340,21 +340,21 @@ end
 
 Return forecast points as `DataFrame`.
 """
-forecast_points(p::AbstractBOPTestPlant) = p.forecast_points
+forecast_points(p::AbstractBOPTestPlant) = copy(p.forecast_points)
 
 """
     input_points(p::AbstractBOPTestPlant)
 
 Return forecast points as `DataFrame`.
 """
-input_points(p::AbstractBOPTestPlant) = p.input_points
+input_points(p::AbstractBOPTestPlant) = copy(p.input_points)
 
 """
     measurement_points(p::AbstractBOPTestPlant)
 
 Return measurement points as `DataFrame`.
 """
-measurement_points(p::AbstractBOPTestPlant) = p.measurement_points
+measurement_points(p::AbstractBOPTestPlant) = copy(p.measurement_points)
 
 
 """
@@ -362,16 +362,19 @@ measurement_points(p::AbstractBOPTestPlant) = p.measurement_points
 
 Return forecasts from current time step as `DataFrame`.
 """
-forecasts(p::CachedBOPTestPlant) = p.forecasts
+forecasts(p::CachedBOPTestPlant) = copy(p.forecasts)
 
 """
-    past_inputs(p::CachedBOPTestPlant)
+    inputs_sent(p::CachedBOPTestPlant)
 
-Return past inputs to plant as `DataFrame`.
+Return past inputs sent to the plant as `DataFrame`.
 
-In case the default was used for a signal, the entry will be `missing`.
+Note that this contains values as sent; if out of bounds, the plant might use other values.
+Use `measurements` to get a `DataFrame` with the actually used inputs.
+
+In case the default was used for a signal, the entry here will be `missing`.
 """
-past_inputs(p::CachedBOPTestPlant) = p.inputs
+inputs_sent(p::CachedBOPTestPlant) = copy(p.inputs)
 
 """
     measurements(p::CachedBOPTestPlant)
@@ -382,7 +385,7 @@ Unlike `getmeasurements(p, ...)`, this method uses the local cache. This means
 that (1) the time step corresponds to the controller time step, and (2) also actually
 realized control inputs are available.
 """
-measurements(p::CachedBOPTestPlant) = p.measurements
+measurements(p::CachedBOPTestPlant) = copy(p.measurements)
 
 
 """
@@ -420,7 +423,7 @@ function initialize!(plant::CachedBOPTestPlant; kwargs...)
     res = initialize!(plant.meta)
 
     plant.forecasts = getforecasts(plant.meta, plant.N * plant.dt, plant.dt)
-    plant.measurements = _create_measurement_df(plant.meta)
+    plant.measurements = getmeasurements(plant.meta, 0, 0)
     plant.inputs = _create_input_df(plant.meta)
     return res
 end
@@ -532,14 +535,14 @@ Query measurements from BOPTEST server and return as `DataFrame`.
 - `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. \
 If set to `false`, the columns will have type `Any`.
 
-To obtain available measurement points, use `plant.measurement_points`, which is a 
-`DataFrame` with a column `:Name` that contains all available signals.
+To obtain available points, use `measurement_points(plant)` and `input_points(plant),
+which each return a `DataFrame` with a column `:Name` that contains all available signals.
 """
 function getmeasurements(
     plant::AbstractBOPTestPlant,
     starttime::Real,
     finaltime::Real,
-    points = plant.measurement_points.Name;
+    points = [plant.input_points.Name; plant.measurement_points.Name];
     convert_f64::Bool = true,
     kwargs...
 )
@@ -592,7 +595,7 @@ Query forecast from BOPTEST server and return as `DataFrame`.
 - `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. \
 If set to `false`, the columns will have type `Any`.
 
-Available forecast points are stored in `plant.forecast_points`. 
+Available forecast points are available using `forecast_points(plant)`. 
 """
 function getforecasts(
     plant::AbstractBOPTestPlant,
@@ -657,6 +660,7 @@ function advance!(
 
     push!(plant.measurements, payload)
     all_inputs = _complete_inputs(u, plant.input_points.Name)
+    all_inputs["time"] = fc[1, :time] - plant.dt
     push!(plant.inputs, all_inputs)
     
     return payload
@@ -715,7 +719,7 @@ end
 
 Return `Dict` with control signals for BOPTEST.
 
-This method calls `inputpoints(plant)` to gather available inputs,
+This method calls `input_points(plant)` to gather available inputs,
 and then creates a `Dict` with the available inputs as keys and
 default values defined by function `f`.
 

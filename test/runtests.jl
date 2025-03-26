@@ -113,7 +113,7 @@ end
             advance!(plant, u)
         end
 
-        p_i = past_inputs(plant)
+        p_i = inputs_sent(plant)
         @test size(p_i, 1) == N_advance
         @test all(ismissing.(p_i[!, :oveTSet_u]))
         @test all(p_i[!, :oveHeaPumY_u] .== 0.3)
@@ -127,10 +127,13 @@ end
 
         initialize!(plant)
         m = measurements(plant)
-        i = past_inputs(plant)
-        fc = forecasts(plant)
-        @test size(m, 1) == 0
+        @test size(m, 1) == 1
+
+        i = inputs_sent(plant)
         @test size(i, 1) == 0
+        @test "time" in names(i)
+        
+        fc = forecasts(plant)       
         @test minimum(fc.time) == 0.0
         
     catch e
