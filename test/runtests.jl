@@ -24,11 +24,11 @@ using Test
     try
         @test plant isa AbstractBOPTestPlant
         
-        fcpts = plant.forecast_points
+        fcpts = forecast_points(plant)
         @test "Name" in names(fcpts)
         @test size(fcpts, 1) > 0
 
-        @test size(plant.measurement_points, 1) > 0
+        @test size(measurement_points(plant), 1) > 0
 
         dfres = getmeasurements(plant, 0.0, 0.0) # DataFrame
         @test "time" in names(dfres)
@@ -103,9 +103,9 @@ end
         @test plant.N == N
 
         # To check Base.getproperty accessor
-        @test plant.input_points isa AbstractDataFrame
+        @test input_points(plant) isa AbstractDataFrame
 
-        @test size(plant.forecasts, 1) == N + 1
+        @test size(forecasts(plant), 1) == N + 1
         
         u = Dict("oveHeaPumY_activate" => 1, "oveHeaPumY_u" => 0.3)
         N_advance = 10
@@ -113,19 +113,28 @@ end
             advance!(plant, u)
         end
 
-        @test size(plant.inputs, 1) == N_advance
-        @test all(ismissing.(plant.inputs[!, :oveTSet_u]))
-        @test all(plant.inputs[!, :oveHeaPumY_u] .== 0.3)
+        p_i = inputs_sent(plant)
+        @test size(p_i, 1) == N_advance
+        @test all(ismissing.(p_i[!, :oveTSet_u]))
+        @test all(p_i[!, :oveHeaPumY_u] .== 0.3)
 
-        @test size(plant.measurements, 1) == N_advance
-        @test all(diff(plant.measurements.time) .== dt)
+        m = measurements(plant)
+        @test size(m, 1) == N_advance
+        @test all(diff(m.time) .== dt)
 
-        @test minimum(plant.forecasts.time) == N_advance * dt
+        fc = forecasts(plant)
+        @test minimum(fc.time) == N_advance * dt
 
         initialize!(plant)
-        @test size(plant.measurements, 1) == 0
-        @test size(plant.inputs, 1) == 0
-        @test minimum(plant.forecasts.time) == 0.0
+        m = measurements(plant)
+        @test size(m, 1) == 1
+
+        i = inputs_sent(plant)
+        @test size(i, 1) == 0
+        @test "time" in names(i)
+        
+        fc = forecasts(plant)       
+        @test minimum(fc.time) == 0.0
         
     catch e
         rethrow(e)

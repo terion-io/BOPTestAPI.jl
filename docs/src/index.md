@@ -22,7 +22,7 @@ testcase = "bestest_hydronic"
 plant = BOPTestPlant("http://api.boptest.net", testcase, dt=dt)
 
 # Get available measurement points
-mpts = plant.measurement_points
+mpts = measurement_points(plant)
 mdtable(mpts[1:3, :], latex=false) # hide
 ```
 *(Output truncated)*
@@ -91,9 +91,9 @@ old_plant = initboptest!("http://127.0.0.1:5000", dt = dt)
 
 The initialization functions also query and store the available signals (as `DataFrame`),
 since they are constant for a testcase. The signals are available as
-* `plant.forecast_points`
-* `plant.input_points`
-* `plant.measurement_points`
+* `forecast_points(plant)`
+* `input_points(plant)`
+* `measurement_points(plant)`
 
 ### Interaction with the plant
 The package then defines common functions to operate on the plant, namely
@@ -116,7 +116,7 @@ fc = getforecasts(plant, 24*3600, dt, plant.forecast_points.Name)
 The `advance!` function requires the control inputs `u` as a `Dict`. Allowed control inputs are test case specific, but can be queried as property `input_points`.
 
 ```julia
-ipts = plant.input_points
+ipts = input_points(plant)
 
 # Alternative: Create a simple Dict directly
 # This will by default overwrite all baseline values with the lowest allowed value
@@ -138,16 +138,33 @@ stop!(plant)
 ```
 
 ## API
+### Types
 ```@docs
 BOPTestPlant
 CachedBOPTestPlant
+```
+### Accessors
+```@docs
+forecast_points
+input_points
+measurement_points
+forecasts
+inputs_sent
+measurements
+```
+### Interaction
+```@docs
 initialize!
 initboptest!
 setscenario!
 getforecasts
 getmeasurements
 getkpi
+getstep
 advance!
 stop!
+```
+### Utils
+```@docs
 controlinputs
 ```
