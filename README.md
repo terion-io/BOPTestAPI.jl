@@ -18,15 +18,23 @@ The general idea is that the BOPTEST services are abstracted away as a `BOPTestP
 The package then defines common functions to operate on the plant, which are translated to REST API calls and the required data formattings.
 
 ### Initialization
-There are two subtypes of plants, depending on whether they run in BOPTEST or BOPTEST-Service:
-* Type `BOPTestPlant{BOPTestEndpoint}`, for local BOPTEST `< v0.7`. The test case is specified when starting the service, and there is no test ID since only a single plant is running. Use `initboptest!(url)` for creating a plant.
-* Type `BOPTestPlant{BOPTesServiceEndpoint}`, for BOPTEST `>= v0.7` or remote plants. The test case needs to be specified explicitly, and a `testid` UUID is returned by the server that is stored as endpoint metadata. Use `BOPTestPlant(url, testcase)` for creating a plant.
+There are two types of plants:
+* `BOPTestPlant` to store metadata and provide access methods.
+* `CachedBOPTestPlant`, which in addition also caches inputs, forecasts (up to a horizon), and measurements.
+
+The types are parametrized, depending on whether they run in BOPTEST or BOPTEST-Service:
+* For local BOPTEST `< v0.7`, the test case is specified when starting the service (i.e. outside of Julia). Use `initboptest!(url)` for connecting to the plant. It has type `BOPTestPlant{BOPTestEndpoint}`.
+* For BOPTEST `>= v0.7` or remote plants, the test case needs to be specified explicitly, and a `testid` UUID is returned by the server that is stored as endpoint metadata.
+  * Use `BOPTestPlant(url, testcase)` to create a plant without cache. It has type `BOPTestPlant{BOPTestServiceEndpoint}`.
+  * Use `CachedBOPTestPlant(url, testcase, horizon)` to create a plant with cache. It has type `CachedBOPTestPlant{BOPTestServiceEndpoint}`.
+
 
 > [!IMPORTANT]
 > BOPTEST from version `v0.7.0` uses the BOPTEST-service API even on local deployment. Thus, since BOPTestAPI v0.3, the `BOPTestPlant` constructor is overloaded and can be used directly.
 
 > [!TIP]
 > For a plant instance, `plant.api_endpoint(service)` is callable and returns the endpoint of a specific service as `String`, this can be useful for defining additional functions.
+> E.g. `plant.api_endpoint("advance")` for a plant on `localhost` with internal testid `"a-b-c-d"` returns `"http://localhost/advance/a-b-c-d"`.
 
 ```julia
 testcase = "bestest_hydronic"
@@ -52,6 +60,8 @@ The package then defines common functions to operate on the plant, namely
 * `getforecasts`, `getmeasurements` to get the actual time series data for forecast or past measurements
 * `getkpi` to get the KPI for the test case (calculated by BOPTEST)
 * `advance!`, to step the plant one time step with user-specified control input
+* `initialize!` to re-initialize the plant
+* `setscenario!` to set the scenerio on an existing plant
 * `stop!`, to stop a test case
 
 #### Querying data
