@@ -123,7 +123,7 @@ end
         @test size(p_i, 2) == 2
 
         m = measurements(plant)
-        @test size(m, 1) == N_advance
+        @test size(m, 1) == N_advance + 1
         @test all(diff(m.time) .== dt)
 
         fc = forecasts(plant)
