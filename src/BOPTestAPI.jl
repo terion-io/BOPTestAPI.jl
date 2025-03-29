@@ -381,9 +381,8 @@ inputs_sent(p::CachedBOPTestPlant) = copy(p.inputs)
 
 Return measurements as `DataFrame`.
 
-Unlike `getmeasurements(p, ...)`, this method uses the local cache. This means
-that (1) the time step corresponds to the controller time step, and (2) also actually
-realized control inputs are available.
+Unlike `getmeasurements(p, ...)`, this method uses the local cache. This also means
+that the time step corresponds to the controller time step.
 """
 measurements(p::CachedBOPTestPlant) = copy(p.measurements)
 

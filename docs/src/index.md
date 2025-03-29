@@ -19,11 +19,11 @@ using Latexify # hide
 dt = 900.0 # time step in seconds
 testcase = "bestest_hydronic"
 
-plant = BOPTestPlant("http://api.boptest.net", testcase, dt=dt)
+plant = BOPTestPlant("http://api.boptest.net", testcase, dt = dt)
 
 # Get available measurement points
 mpts = measurement_points(plant)
-mdtable(mpts[1:3, :], latex=false) # hide
+mdtable(mpts[1:3, :], latex = false) # hide
 ```
 *(Output truncated)*
 
@@ -43,7 +43,7 @@ end
 stop!(plant)
 
 dfres = DataFrame(res)
-mdtable(mapcols(c -> round.(c, digits=2), dfres[1:5, 3:6]), latex=false) # hide
+mdtable(mapcols(c -> round.(c, digits=2), dfres[1:5, 3:6]), latex = false) # hide
 ```
 *(Output truncated in both columns and rows)*
 
@@ -56,17 +56,18 @@ df = leftjoin(dfres, fc, on = :time => :time)
 pl1 = plot(
     df.time ./ 3600,
     Matrix(df[!, ["reaTRoo_y", "LowerSetp[1]"]]);
-    xlabel="t [h]",
-    ylabel="T [K]",
-    labels=["actual" "target"],
+    xlabel = "t [h]",
+    ylabel = "T [K]",
+    labels = ["actual" "target"],
 )
 pl2 = plot(
-    df.time ./ 3600, df.reaQHea_y ./ 1000;
-    xlabel="t [h]",
-    ylabel="Qdot [kW]",
-    labels="Heating"
+    df.time ./ 3600,
+    df.reaQHea_y ./ 1000;
+    xlabel = "t [h]",
+    ylabel = "Qdot [kW]",
+    labels = "Heating"
 )
-plot(pl1, pl2; layout=(2, 1))
+plot(pl1, pl2; layout = (2, 1))
 ```
 
 ## Usage
@@ -77,13 +78,16 @@ The general idea is that the BOPTEST services are abstracted away as a `BOPTestP
 The package then defines common functions to operate on the plant, which are translated to REST API calls and the required data formattings.
 
 ### Initialization
-Use the `BOPTestPlant` constructor:
+Use the `BOPTestPlant` or `CachedBOPTestPlant` constructor:
 
 ```julia
 dt = 900.0 # time step in seconds
 
 testcase = "bestest_hydronic"
 plant = BOPTestPlant("http://localhost", testcase, dt = dt)
+
+n_forecast = 24
+plant_with_cache = CachedBOPTestPlant("http://api.boptest.net", testcase, n_forecast, dt = dt)
 
 # For old BOPTEST < v0.7, use the deprecated initboptest! function
 old_plant = initboptest!("http://127.0.0.1:5000", dt = dt)
@@ -100,6 +104,8 @@ The package then defines common functions to operate on the plant, namely
 * `getforecasts`, `getmeasurements` to get the actual time series data for forecast or past measurements
 * `getkpi` to get the KPI for the test case (calculated by BOPTEST)
 * `advance!`, to step the plant one time step with user-specified control input
+* `initialize!` to re-initialize the plant
+* `setscenario!` to set the scenerio on an existing plant
 * `stop!`, to stop a test case (BOPTEST-Service only)
 
 #### Querying data
@@ -109,7 +115,12 @@ the keyword argument `convert_f64=false` to disable conversion.
 ```julia
 # Query forecast data for 24 hours, with 1/dt sampling frequency
 # The column "Name" contains all available forecast signal names
-fc = getforecasts(plant, 24*3600, dt, plant.forecast_points.Name)
+fc_pts = forecast_points(plant)
+fc = getforecasts(plant, 24*3600, dt, fc_pts.Name)
+
+# For a CachedBOPTestPlant, the forecasts are part of the local cache
+# So the following won't result in a REST API call
+fc2 = forecasts(plant_with_cache)
 ```
 
 #### Advancing
