@@ -9,12 +9,22 @@ HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
+[weakdeps]
+ReinforcementLearning = "158674fc-8238-5cab-b5ba-03dfc80d1318"
+
+[extensions]
+# name of extension to the left
+# extension dependencies required to load the extension to the right
+# use a list for multiple extension dependencies
+BOPTestRLExt = "ReinforcementLearning"
+
 [compat]
 DataFrames = "1"
 HTTP = "1"
 JSON = "0.21"
 Logging = "1.7.0"
 julia = "1.7"
+ReinforcementLearning = "0.11.0"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
