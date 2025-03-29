@@ -118,8 +118,8 @@ function CachedBOPTestPlant(
     dt = Float64(get(kwargs, :dt, getstep(meta)))
 
     forecasts = getforecasts(meta, N * dt, dt)
+    measurements = getmeasurements(plant.meta, 0, 0)
     inputs = _create_input_df(meta)
-    measurements = _create_measurement_df(meta)
 
     return CachedBOPTestPlant(;
         meta,
