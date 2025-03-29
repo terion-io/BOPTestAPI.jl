@@ -359,32 +359,50 @@ measurement_points(p::AbstractBOPTestPlant) = copy(p.measurement_points)
 
 """
     forecasts(p::CachedBOPTestPlant)
+    forecasts(p::CachedBOPTestPlant; rows, columns)
 
 Return forecasts from current time step as `DataFrame`.
+
+Use valid row and column selectors from `DataFrames.jl` for the keyword arguments.
 """
-forecasts(p::CachedBOPTestPlant) = copy(p.forecasts)
+forecasts(
+    p::CachedBOPTestPlant;
+    rows = axes(p.forecasts, 1),
+    columns = All(),
+) = p.forecasts[rows, columns]
 
 """
     inputs_sent(p::CachedBOPTestPlant)
+    inputs_sent(p::CachedBOPTestPlant; rows, columns)
 
 Return past inputs sent to the plant as `DataFrame`.
 
 Note that this contains values as sent; if out of bounds, the plant might use other values.
-Use `measurements` to get a `DataFrame` with the actually used inputs.
-
-In case the default was used for a signal, the entry here will be `missing`.
+Use `measurements` to get a `DataFrame` with the actually used inputs. In case the default
+was used for a signal, the entry here will be `missing`.
+Use valid row and column selectors from `DataFrames.jl` for the keyword arguments.
 """
-inputs_sent(p::CachedBOPTestPlant) = copy(p.inputs)
+inputs_sent(
+    p::CachedBOPTestPlant;
+    rows = axes(p.inputs, 1),
+    columns = All(),
+) = p.inputs[rows, columns]
 
 """
     measurements(p::CachedBOPTestPlant)
+    measurements(p::CachedBOPTestPlant; rows, columns)
 
 Return measurements as `DataFrame`.
 
 Unlike `getmeasurements(p, ...)`, this method uses the local cache. This also means
 that the time step corresponds to the controller time step.
+Use valid row and column selectors from `DataFrames.jl` for the keyword arguments.
 """
-measurements(p::CachedBOPTestPlant) = copy(p.measurements)
+measurements(
+    p::CachedBOPTestPlant;
+    rows = axes(p.measurements, 1),
+    columns = All(),
+) = p.measurements[rows, columns]
 
 
 """

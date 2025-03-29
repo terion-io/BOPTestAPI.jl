@@ -118,6 +118,10 @@ end
         @test all(ismissing.(p_i[!, :oveTSet_u]))
         @test all(p_i[!, :oveHeaPumY_u] .== 0.3)
 
+        p_i = inputs_sent(plant, rows = 1:3, columns = ["time", "oveHeaPumY_u"])
+        @test size(p_i, 1) == 3
+        @test size(p_i, 2) == 2
+
         m = measurements(plant)
         @test size(m, 1) == N_advance
         @test all(diff(m.time) .== dt)
