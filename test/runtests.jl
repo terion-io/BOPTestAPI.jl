@@ -106,6 +106,7 @@ end
         @test input_points(plant) isa AbstractDataFrame
 
         @test size(forecasts(plant), 1) == N + 1
+        @test size(measurements(plant), 1) == 1
         
         u = Dict("oveHeaPumY_activate" => 1, "oveHeaPumY_u" => 0.3)
         N_advance = 10
