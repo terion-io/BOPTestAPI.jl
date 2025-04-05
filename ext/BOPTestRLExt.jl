@@ -1,6 +1,5 @@
 module BOPTestRLExt
 
-
 import BOPTestAPI: AbstractBOPTestPlant
 import DomainSets: ProductDomain, Rectangle
 import IntervalSets: AbstractInterval
@@ -135,24 +134,5 @@ function _discretize_state_space(S::Rectangle)
     domains = Base.OneTo.(ceil.(Int, r .+ 1))
     return ProductDomain(domains...)
 end
-
-Ts = 3600.0
-plant = CachedBOPTestPlant("http://localhost", "bestest_hydronic", 24)
-env = BOPTestRLEnv{BestestHydronic}(plant)
-
-S_env = state_space(env)
-
-action_disc_env = ActionTransformedEnv(
-    env;
-    action_mapping = a -> a - 1,
-    action_space_mapping = A -> _discretize_action_space(A),
-)
-
-state_disc_env = StateTransformedEnv(
-    action_disc_env;
-    state_mapping = s -> round.(Int, s .- S_env.a),
-    state_space_mapping = S -> _discretize_state_space(S)
-)
-
 
 end
