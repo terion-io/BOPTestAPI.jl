@@ -507,7 +507,7 @@ function initboptest!(
         initboptest!,
     )
 
-    return _initboptest!(api_endpoint; dt, init_vals, scenario, verbose, timeout)
+    return _initboptest!(api_endpoint; dt, init_vals, scenario, timeout)
 end
 
 function initboptest!(boptest_url::AbstractString, args...; kwargs...)
