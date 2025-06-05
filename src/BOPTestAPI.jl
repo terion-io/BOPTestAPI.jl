@@ -59,9 +59,9 @@ Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTes
     testcase::AbstractString
     scenario::AbstractDict
 
-    forecast_points::AbstractDataFrame
-    input_points::AbstractDataFrame
-    measurement_points::AbstractDataFrame
+    forecast_points::DataFrame
+    input_points::DataFrame
+    measurement_points::DataFrame
 end
 
 function BOPTestPlant(
@@ -100,9 +100,9 @@ Base.@kwdef mutable struct CachedBOPTestPlant{EP <: AbstractBOPTestEndpoint} <: 
     dt::Float64 # Step size
     N::Int      # Forecast horizon
 
-    forecasts::AbstractDataFrame
-    inputs::AbstractDataFrame
-    measurements::AbstractDataFrame
+    forecasts::DataFrame
+    inputs::DataFrame
+    measurements::DataFrame
 end
 
 function CachedBOPTestPlant(meta::BOPTestPlant, N::Int)
