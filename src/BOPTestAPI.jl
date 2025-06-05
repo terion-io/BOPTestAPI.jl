@@ -14,12 +14,6 @@ using Logging
 
 const _DEF_TIMEOUT = 30
 
-# const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
-Base.@deprecate_binding BOPTEST_DEF_URL "http://127.0.0.1:5000"
-
-# const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
-Base.@deprecate_binding BOPTEST_SERVICE_DEF_URL "http://api.boptest.net"
-
 abstract type AbstractBOPTestEndpoint end
 
 # BOPTEST-Service (https://github.com/NREL/boptest-service)
@@ -479,7 +473,7 @@ setscenario!(p::AbstractBOPTestPlant, d; kwargs...) = setscenario!(p.api_endpoin
 """
     initboptest!(boptest_url[; dt, init_vals, scenario])
 
-[**Warning:** Deprecated.] Initialize the local BOPTEST server.
+Initialize the local BOPTEST server.
 
 # Arguments
 - `boptest_url::AbstractString`: URL of the BOPTEST server to initialize.
@@ -490,25 +484,18 @@ setscenario!(p::AbstractBOPTestPlant, d; kwargs...) = setscenario!(p.api_endpoin
 
 Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
 
-**Warning:** This function is deprecated, since BOPTEST v0.7 switched to the
-BOPTEST-Service API. Use it for a locally deployed `BOPTEST < v0.7`.
+**Info:** Since v0.7, BOPTEST switched to the BOPTEST-Service API.
+Use this for a locally deployed `BOPTEST < v0.7`, or for other BOPTEST-like
+APIs, e.g. `yards` (https://gitlab.kuleuven.be/positive-energy-districts/yards/).
 
 """
-function initboptest!(
+initboptest!(
     api_endpoint::AbstractBOPTestEndpoint;
     dt::Union{Nothing, Real} = nothing,
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
     scenario::Union{Nothing, AbstractDict} = nothing,
     timeout::Real = _DEF_TIMEOUT,
-)
-    Base.depwarn(
-        "`initboptest!` is deprecated since v0.3.0 and will be removed" *
-        " from the public API in a future release.",
-        initboptest!,
-    )
-
-    return _initboptest!(api_endpoint; dt, init_vals, scenario, timeout)
-end
+) = _initboptest!(api_endpoint; dt, init_vals, scenario, timeout)
 
 function initboptest!(boptest_url::AbstractString, args...; kwargs...)
     api_endpoint = BOPTestEndpoint(boptest_url)
