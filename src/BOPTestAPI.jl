@@ -74,19 +74,23 @@ end
 
 
 """
+    CachedBOPTestPlant(plant, N)
     CachedBOPTestPlant(boptest_url, testcase, N[; dt, init_vals, scenario])
 
-[**Warning: Experimental**] Initialize a testcase in BOPTEST service, with a local cache.
+[**Warning: Experimental**] Create a plant with a local cache.
 
 In addition to the properties and methods of the normal `BOPTestPlant`, this type also
 stores submitted inputs, received measurements, and the current forecast. These values
 are updated when calling `advance!`.
 
 # Arguments
+- `plant::BOPTestPlant`: Plant to wrap into a `CachedBOPTestPlant`
+- `N::Int`: Forecast cache size.
+**or** (to initialize a new testcase)
 - `boptest_url::AbstractString`: URL of the BOPTEST-Service API to initialize.
 - `testcase::AbstractString`: Name of the test case, \
 [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
-- `N::Int`: Forecast cache size
+- `N::Int`: Forecast cache size.
 ## Keyword arguments
 See the documentation for `BOPTestPlant`.
 """
@@ -101,15 +105,8 @@ Base.@kwdef mutable struct CachedBOPTestPlant{EP <: AbstractBOPTestEndpoint} <: 
     measurements::AbstractDataFrame
 end
 
-function CachedBOPTestPlant(
-    boptest_url::AbstractString,
-    testcase::AbstractString,
-    N::Int;
-    kwargs...
-)
-    meta = _initboptestservice!(boptest_url, testcase; kwargs...)
-
-    dt = Float64(get(kwargs, :dt, getstep(meta)))
+function CachedBOPTestPlant(meta::BOPTestPlant, N::Int)
+    dt = Float64(getstep(meta))
 
     forecasts = getforecasts(meta, N * dt, dt)
     measurements = getmeasurements(meta, 0, 0)
@@ -124,6 +121,14 @@ function CachedBOPTestPlant(
         measurements,
     )
 end
+
+CachedBOPTestPlant(
+    boptest_url::AbstractString,
+    testcase::AbstractString,
+    N::Int;
+    kwargs...
+) = CachedBOPTestPlant(_initboptestservice!(boptest_url, testcase; kwargs...), N)
+
 
 function Base.getproperty(p::CachedBOPTestPlant, s::Symbol)
     if s in fieldnames(BOPTestPlant)
