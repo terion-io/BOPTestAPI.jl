@@ -14,12 +14,6 @@ using Logging
 
 const _DEF_TIMEOUT = 30
 
-# const BOPTEST_DEF_URL = "http://127.0.0.1:5000"
-Base.@deprecate_binding BOPTEST_DEF_URL "http://127.0.0.1:5000"
-
-# const BOPTEST_SERVICE_DEF_URL = "http://api.boptest.net"
-Base.@deprecate_binding BOPTEST_SERVICE_DEF_URL "http://api.boptest.net"
-
 abstract type AbstractBOPTestEndpoint end
 
 # BOPTEST-Service (https://github.com/NREL/boptest-service)
@@ -65,34 +59,36 @@ Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTes
     testcase::AbstractString
     scenario::AbstractDict
 
-    forecast_points::AbstractDataFrame
-    input_points::AbstractDataFrame
-    measurement_points::AbstractDataFrame
+    forecast_points::DataFrame
+    input_points::DataFrame
+    measurement_points::DataFrame
 end
 
-function BOPTestPlant(
+BOPTestPlant(
     boptest_url::AbstractString,
     testcase::AbstractString;
     kwargs...
-)
-    return _initboptestservice!(boptest_url, testcase; kwargs...)
-end
+) = _initboptestservice!(boptest_url, testcase; kwargs...)
 
 
 """
+    CachedBOPTestPlant(plant, N)
     CachedBOPTestPlant(boptest_url, testcase, N[; dt, init_vals, scenario])
 
-[**Warning: Experimental**] Initialize a testcase in BOPTEST service, with a local cache.
+[**Warning: Experimental**] Create a plant with a local cache.
 
 In addition to the properties and methods of the normal `BOPTestPlant`, this type also
 stores submitted inputs, received measurements, and the current forecast. These values
 are updated when calling `advance!`.
 
 # Arguments
+- `plant::BOPTestPlant`: Plant to wrap into a `CachedBOPTestPlant`
+- `N::Int`: Forecast cache size.
+**or** (to initialize a new testcase)
 - `boptest_url::AbstractString`: URL of the BOPTEST-Service API to initialize.
 - `testcase::AbstractString`: Name of the test case, \
 [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
-- `N::Int`: Forecast cache size
+- `N::Int`: Forecast cache size.
 ## Keyword arguments
 See the documentation for `BOPTestPlant`.
 """
@@ -102,20 +98,13 @@ Base.@kwdef mutable struct CachedBOPTestPlant{EP <: AbstractBOPTestEndpoint} <: 
     dt::Float64 # Step size
     N::Int      # Forecast horizon
 
-    forecasts::AbstractDataFrame
-    inputs::AbstractDataFrame
-    measurements::AbstractDataFrame
+    forecasts::DataFrame
+    inputs::DataFrame
+    measurements::DataFrame
 end
 
-function CachedBOPTestPlant(
-    boptest_url::AbstractString,
-    testcase::AbstractString,
-    N::Int;
-    kwargs...
-)
-    meta = _initboptestservice!(boptest_url, testcase; kwargs...)
-
-    dt = Float64(get(kwargs, :dt, getstep(meta)))
+function CachedBOPTestPlant(meta::BOPTestPlant, N::Int)
+    dt = Float64(getstep(meta))
 
     forecasts = getforecasts(meta, N * dt, dt)
     measurements = getmeasurements(meta, 0, 0)
@@ -130,6 +119,14 @@ function CachedBOPTestPlant(
         measurements,
     )
 end
+
+CachedBOPTestPlant(
+    boptest_url::AbstractString,
+    testcase::AbstractString,
+    N::Int;
+    kwargs...
+) = CachedBOPTestPlant(BOPTestPlant(boptest_url, testcase; kwargs...), N)
+
 
 function Base.getproperty(p::CachedBOPTestPlant, s::Symbol)
     if s in fieldnames(BOPTestPlant)
@@ -479,7 +476,7 @@ setscenario!(p::AbstractBOPTestPlant, d; kwargs...) = setscenario!(p.api_endpoin
 """
     initboptest!(boptest_url[; dt, init_vals, scenario])
 
-[**Warning:** Deprecated.] Initialize the local BOPTEST server.
+Initialize the local BOPTEST server.
 
 # Arguments
 - `boptest_url::AbstractString`: URL of the BOPTEST server to initialize.
@@ -490,25 +487,18 @@ setscenario!(p::AbstractBOPTestPlant, d; kwargs...) = setscenario!(p.api_endpoin
 
 Return a `BOPTestPlant` instance, or throw an `ErrorException` on error.
 
-**Warning:** This function is deprecated, since BOPTEST v0.7 switched to the
-BOPTEST-Service API. Use it for a locally deployed `BOPTEST < v0.7`.
+**Info:** Since v0.7, BOPTEST switched to the BOPTEST-Service API.
+Use this for a locally deployed `BOPTEST < v0.7`, or for other BOPTEST-like
+APIs, e.g. `yards` (https://gitlab.kuleuven.be/positive-energy-districts/yards/).
 
 """
-function initboptest!(
+initboptest!(
     api_endpoint::AbstractBOPTestEndpoint;
     dt::Union{Nothing, Real} = nothing,
     init_vals = Dict("start_time" => 0, "warmup_period" => 0),
     scenario::Union{Nothing, AbstractDict} = nothing,
     timeout::Real = _DEF_TIMEOUT,
-)
-    Base.depwarn(
-        "`initboptest!` is deprecated since v0.3.0 and will be removed" *
-        " from the public API in a future release.",
-        initboptest!,
-    )
-
-    return _initboptest!(api_endpoint; dt, init_vals, scenario, timeout)
-end
+) = _initboptest!(api_endpoint; dt, init_vals, scenario, timeout)
 
 function initboptest!(boptest_url::AbstractString, args...; kwargs...)
     api_endpoint = BOPTestEndpoint(boptest_url)
