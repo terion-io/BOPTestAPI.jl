@@ -64,13 +64,11 @@ Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTes
     measurement_points::DataFrame
 end
 
-function BOPTestPlant(
+BOPTestPlant(
     boptest_url::AbstractString,
     testcase::AbstractString;
     kwargs...
-)
-    return _initboptestservice!(boptest_url, testcase; kwargs...)
-end
+) = _initboptestservice!(boptest_url, testcase; kwargs...)
 
 
 """
@@ -127,7 +125,7 @@ CachedBOPTestPlant(
     testcase::AbstractString,
     N::Int;
     kwargs...
-) = CachedBOPTestPlant(_initboptestservice!(boptest_url, testcase; kwargs...), N)
+) = CachedBOPTestPlant(BOPTestPlant(boptest_url, testcase; kwargs...), N)
 
 
 function Base.getproperty(p::CachedBOPTestPlant, s::Symbol)
