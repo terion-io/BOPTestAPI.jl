@@ -383,6 +383,11 @@ Return past inputs sent to the plant as `DataFrame`.
 Note that this contains values as sent; if out of bounds, the plant might use other values.
 Use `measurements` to get a `DataFrame` with the actually used inputs. In case the default
 was used for a signal, the entry here will be `missing`.
+
+The values in the `time` column give the plant time *after* the time step is completed, \
+not when it was sent. This matches the `time` column in `DataFrame` returned by \
+`measurement(plant)`.
+
 Use valid row and column selectors from `DataFrames.jl` for the keyword arguments.
 """
 inputs_sent(
