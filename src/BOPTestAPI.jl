@@ -72,8 +72,8 @@ BOPTestPlant(
 
 
 """
-    CachedBOPTestPlant(plant, N)
-    CachedBOPTestPlant(boptest_url, testcase, N[; dt, init_vals, scenario])
+    CachedBOPTestPlant(plant, N[, Nmax])
+    CachedBOPTestPlant(boptest_url, testcase, N[, Nmax; dt, init_vals, scenario])
 
 [**Warning: Experimental**] Create a plant with a local cache.
 
@@ -89,6 +89,8 @@ are updated when calling `advance!`.
 - `testcase::AbstractString`: Name of the test case, \
 [list here](https://ibpsa.github.io/project1-boptest/testcases/index.html).
 - `N::Int`: Forecast cache size.
+## Optional arguments
+- `Nmax::Int = 2N`: Maximum forecast cache size
 ## Keyword arguments
 See the documentation for `BOPTestPlant`.
 """
@@ -96,17 +98,19 @@ Base.@kwdef mutable struct CachedBOPTestPlant{EP <: AbstractBOPTestEndpoint} <: 
     meta::BOPTestPlant{EP}
 
     dt::Float64 # Step size
-    N::Int      # Forecast horizon
+    N::Int  # Min forecast horizon
+    Nmax::Int  # Max forecast horizon
 
     forecasts::DataFrame
     inputs::DataFrame
     measurements::DataFrame
 end
 
-function CachedBOPTestPlant(meta::BOPTestPlant, N::Int)
+function CachedBOPTestPlant(meta::BOPTestPlant, N::Int, Nmax::Int = 2*N)
+    Nmax > N || error("Nmax must be > N")
     dt = Float64(getstep(meta))
 
-    forecasts = getforecasts(meta, N * dt, dt)
+    forecasts = getforecasts(meta, Nmax * dt, dt)
     measurements = getmeasurements(meta, 0, 0)
     inputs = _create_input_df(meta)
 
@@ -114,6 +118,7 @@ function CachedBOPTestPlant(meta::BOPTestPlant, N::Int)
         meta,
         dt,
         N,
+        Nmax,
         forecasts,
         inputs,
         measurements,
@@ -123,9 +128,10 @@ end
 CachedBOPTestPlant(
     boptest_url::AbstractString,
     testcase::AbstractString,
-    N::Int;
+    N::Int,
+    Nmax::Int = 2*N;
     kwargs...
-) = CachedBOPTestPlant(BOPTestPlant(boptest_url, testcase; kwargs...), N)
+) = CachedBOPTestPlant(BOPTestPlant(boptest_url, testcase; kwargs...), N, Nmax)
 
 
 function Base.getproperty(p::CachedBOPTestPlant, s::Symbol)
@@ -136,7 +142,7 @@ function Base.getproperty(p::CachedBOPTestPlant, s::Symbol)
 end
 
 function Base.propertynames(::CachedBOPTestPlant)
-    return (fieldnames(BOPTestPlant)..., :dt, :N, :forecasts, :inputs, :measurements)
+    return (fieldnames(BOPTestPlant)..., :dt, :N, :Nmax, :forecasts, :inputs, :measurements)
 end
 
 function Base.show(io::IO, plant::T) where {T <: AbstractBOPTestPlant}
@@ -152,7 +158,7 @@ function Base.show(io::IO, ::MIME"text/plain", plant::AbstractBOPTestPlant)
     println(io, "Testcase: ", plant.testcase)
     println(io, "Scenario: ", plant.scenario)
     if plant isa CachedBOPTestPlant
-        println(io, "Cached forecast horizon: ", plant.N)
+        println(io, "Cached forecast horizon: ", plant.N, " - ", plant.Nmax)
     end
 end
 
@@ -364,7 +370,7 @@ Use valid row and column selectors from `DataFrames.jl` for the keyword argument
 """
 forecasts(
     p::CachedBOPTestPlant;
-    rows = axes(p.forecasts, 1),
+    rows = 1:p.N+1,
     columns = All(),
 ) = p.forecasts[rows, columns]
 
@@ -436,7 +442,7 @@ initialize!(p::BOPTestPlant; kwargs...) = initialize!(p.api_endpoint; kwargs...)
 function initialize!(plant::CachedBOPTestPlant; kwargs...)
     res = initialize!(plant.meta)
 
-    plant.forecasts = getforecasts(plant.meta, plant.N * plant.dt, plant.dt)
+    plant.forecasts = getforecasts(plant.meta, plant.Nmax * plant.dt, plant.dt)
     plant.measurements = getmeasurements(plant.meta, 0, 0)
     plant.inputs = _create_input_df(plant.meta)
     return res
@@ -661,13 +667,22 @@ function advance!(
 )
     payload = advance!(plant.meta, u; timeout)
 
-    fc = getforecasts(plant, plant.N * plant.dt, plant.dt)
     deleteat!(plant.forecasts, 1)
-    push!(plant.forecasts, fc[end, :])
+    if size(plant.forecasts, 1) <= plant.N
+        fc = getforecasts(plant, plant.Nmax * plant.dt, plant.dt)
+        t_end = plant.forecasts[end, :time]
+        subset!(fc, :time => t -> t .> t_end)
+        append!(plant.forecasts, fc)
+        dt = diff(plant.forecasts.time)
+        if length(unique(dt)) > 1
+            dtmin, dtmax = minimum(dt), maximum(dt)
+            @warn "Forecast time steps not constant (min = $dtmin, max = $dtmax)"
+        end
+    end
 
     push!(plant.measurements, payload)
     all_inputs = _complete_inputs(u, plant.input_points.Name)
-    all_inputs["time"] = fc[1, :time] - plant.dt
+    all_inputs["time"] = payload["time"]
     push!(plant.inputs, all_inputs)
     
     return payload
