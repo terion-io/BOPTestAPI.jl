@@ -105,11 +105,12 @@ end
         # To check Base.getproperty accessor
         @test input_points(plant) isa AbstractDataFrame
 
+        # Default forecasts(plant) returns N+1 rows, even if underlying cache is larger
         @test size(forecasts(plant), 1) == N + 1
         @test size(measurements(plant), 1) == 1
         
         u = Dict("oveHeaPumY_activate" => 1, "oveHeaPumY_u" => 0.3)
-        N_advance = 10
+        N_advance = 48
         for t = 1:N_advance
             advance!(plant, u)
         end
@@ -123,12 +124,15 @@ end
         @test size(p_i, 1) == 3
         @test size(p_i, 2) == 2
 
+        ip2 = inputs_sent(plant)
         m = measurements(plant)
         @test size(m, 1) == N_advance + 1
         @test all(diff(m.time) .== dt)
+        @test m.time[2:end] == ip2.time
 
         fc = forecasts(plant)
         @test minimum(fc.time) == N_advance * dt
+        @test all(diff(fc.time) .== dt)
 
         initialize!(plant)
         m = measurements(plant)
