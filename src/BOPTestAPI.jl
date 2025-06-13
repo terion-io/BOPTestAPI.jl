@@ -19,7 +19,7 @@ abstract type AbstractBOPTestEndpoint end
 # BOPTEST-Service (https://github.com/NREL/boptest-service)
 # runs several test cases in parallel
 struct BOPTestEndpoint <: AbstractBOPTestEndpoint
-    base_url::AbstractString
+    base_url::String
 end
 
 function (base::BOPTestEndpoint)(service::AbstractString)
@@ -29,8 +29,8 @@ end
 # BOPTEST (https://github.com/ibpsa/project1-boptest/) 
 # runs a single test case and thus doesn't have a testid
 struct BOPTestServiceEndpoint <: AbstractBOPTestEndpoint
-    base_url::AbstractString
-    testid::AbstractString
+    base_url::String
+    testid::String
 end
 
 function (base::BOPTestServiceEndpoint)(service::AbstractString)
@@ -54,10 +54,10 @@ Initialize a testcase in BOPTEST service.
 - `scenario::AbstractDict` : Parameters for scenario selection.
 
 """
-Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint} <: AbstractBOPTestPlant
+Base.@kwdef struct BOPTestPlant{EP <: AbstractBOPTestEndpoint, D <: AbstractDict} <: AbstractBOPTestPlant
     api_endpoint::EP
-    testcase::AbstractString
-    scenario::AbstractDict
+    testcase::String
+    scenario::D
 
     forecast_points::DataFrame
     input_points::DataFrame
