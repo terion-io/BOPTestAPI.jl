@@ -569,7 +569,7 @@ function getmeasurements(
     end
     
     # Type needed for dispatching on correct reduce(vcat, dfs) later
-    dfs::Vector{DataFrame} = []
+    dfs = DataFrame[]
     for (ts, te) in zip(query_timesteps[1:end-1], query_timesteps[2:end])
         body = Dict(
             "point_names" => points,
