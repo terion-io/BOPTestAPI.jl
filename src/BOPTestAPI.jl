@@ -386,7 +386,7 @@ was used for a signal, the entry here will be `missing`.
 
 The values in the `time` column give the plant time *after* the time step is completed, \
 not when it was sent. This matches the `time` column in `DataFrame` returned by \
-`measurement(plant)`.
+`measurements(plant)`.
 
 Use valid row and column selectors from `DataFrames.jl` for the keyword arguments.
 """
