@@ -1,6 +1,6 @@
 using Documenter, BOPTestAPI
 
-makedocs(sitename="BOPTestAPI.jl", modules = [BOPTestAPI])
+makedocs(sitename="BOPTestAPI.jl", modules = [BOPTestAPI], checkdocs=:exports)
 
 deploydocs(
     repo = "github.com/terion-io/BOPTestAPI.jl.git",
