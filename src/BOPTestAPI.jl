@@ -75,7 +75,7 @@ BOPTestPlant(
     CachedBOPTestPlant(plant, N[, Nmax])
     CachedBOPTestPlant(boptest_url, testcase, N[, Nmax; dt, init_vals, scenario])
 
-[**Warning: Experimental**] Create a plant with a local cache.
+Create a plant with a local cache.
 
 In addition to the properties and methods of the normal `BOPTestPlant`, this type also
 stores submitted inputs, received measurements, and the current forecast. These values
@@ -553,7 +553,7 @@ Query measurements from BOPTEST server and return as `DataFrame`.
 - `convert_f64::Bool` : whether to convert column types to `Float64`, default `true`. \
 If set to `false`, the columns will have type `Any`.
 
-To obtain available points, use `measurement_points(plant)` and `input_points(plant),
+To obtain available points, use `measurement_points(plant)` and `input_points(plant)`,
 which each return a `DataFrame` with a column `:Name` that contains all available signals.
 """
 function getmeasurements(
