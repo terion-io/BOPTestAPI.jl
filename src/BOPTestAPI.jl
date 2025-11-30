@@ -16,8 +16,8 @@ const _DEF_TIMEOUT = 30
 
 abstract type AbstractBOPTestEndpoint end
 
-# BOPTEST-Service (https://github.com/NREL/boptest-service)
-# runs several test cases in parallel
+# BOPTEST < v0.7.0 (https://github.com/ibpsa/project1-boptest/) 
+# runs a single test case and thus doesn't have a testid
 struct BOPTestEndpoint <: AbstractBOPTestEndpoint
     base_url::String
 end
@@ -26,8 +26,8 @@ function (base::BOPTestEndpoint)(service::AbstractString)
     return "$(base.base_url)/$service"
 end
 
-# BOPTEST (https://github.com/ibpsa/project1-boptest/) 
-# runs a single test case and thus doesn't have a testid
+# BOPTEST-Service (https://github.com/NREL/boptest-service)
+# runs several test cases in parallel
 struct BOPTestServiceEndpoint <: AbstractBOPTestEndpoint
     base_url::String
     testid::String
@@ -307,7 +307,11 @@ function _initboptest!(
 
     res = HTTP.get(api_endpoint("name"), readtimeout = timeout)
     testcase = JSON.parse(String(res.body))["payload"]["name"]
-    @info "Initialized testcase = '$testcase'"
+    info_str = "Initialized testcase = '$testcase'"
+    if hasproperty(api_endpoint, :testid)
+        info_str = info_str * " at testid '$(api_endpoint.testid)'"
+    end
+    @info info_str
     
     # Set scenario (electricity prices, ...)
     scenario = if !isnothing(scenario)
@@ -698,7 +702,7 @@ function _stop!(url::AbstractString, log_testid::AbstractString; timeout::Real =
     try
         r = HTTP.put(url, readtimeout = timeout)
         if r.status == 200
-            @info "Successfully stopped testid $log_testid"
+            @info "Successfully stopped testid '$log_testid'"
         end
     catch e
         if e isa HTTP.Exceptions.StatusError
@@ -717,8 +721,8 @@ end
 
 Stop a `BOPTestPlant` from running.
 
-This method does nothing for plants run in normal BOPTEST 
-(i.e. not BOPTEST-Service).
+This method does nothing for plants run in BOPTEST v0.6.0 and earlier
+(i.e. not using the BOPTEST-Service API).
 """
 function stop!(plant::BOPTestPlant{BOPTestServiceEndpoint}; kwargs...)
     _stop!(plant.api_endpoint("stop"), plant.api_endpoint.testid; kwargs...)
@@ -759,7 +763,7 @@ input.
 """
 function controlinputs(f::Function, plant::AbstractBOPTestPlant)
     # Default for u: override all controls -> "*_activate" = 1
-    # and send u = dfmap(Name)
+    # and use function f(df) to build a dict for the "*_u" values
     override_sigs = subset(
         plant.input_points,
         :Name => s -> endswith.(s, "_activate")
